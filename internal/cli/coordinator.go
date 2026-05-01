@@ -391,6 +391,21 @@ func (c *CoordinatorClient) CreateAWSImage(ctx context.Context, leaseID, name, d
 	return res.Image, err
 }
 
+func (c *CoordinatorClient) PromoteAWSImage(ctx context.Context, region, imageID string) (AWSImage, error) {
+	var res CoordinatorImageResponse
+	values := url.Values{}
+	values.Set("provider", "aws")
+	if region != "" {
+		values.Set("region", region)
+	}
+	path := "/v1/images/promote?" + values.Encode()
+	err := c.do(ctx, http.MethodPost, path, map[string]any{
+		"provider": "aws",
+		"imageID":  imageID,
+	}, &res)
+	return res.Image, err
+}
+
 func (c *CoordinatorClient) StartGitHubLogin(ctx context.Context, pollSecretHash, provider string) (CoordinatorGitHubLoginStart, error) {
 	var res CoordinatorGitHubLoginStart
 	body := map[string]any{"pollSecretHash": pollSecretHash}

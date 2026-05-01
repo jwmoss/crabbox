@@ -223,3 +223,8 @@ export interface AWSImageCreateRequest {
   noReboot?: boolean;
   wait?: boolean;
 }
+
+export interface AWSImagePromoteRequest {
+  provider?: Provider;
+  imageID?: string;
+}

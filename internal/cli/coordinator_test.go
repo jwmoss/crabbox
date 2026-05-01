@@ -132,6 +132,8 @@ func TestCoordinatorImageMethods(t *testing.T) {
 			_, _ = w.Write([]byte(`{"images":[{"id":"ami-123","name":"cached"}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/images":
 			_, _ = w.Write([]byte(`{"image":{"id":"ami-456","name":"created","source":"created"}}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.String(), "/v1/images/promote?"):
+			_, _ = w.Write([]byte(`{"image":{"id":"ami-789","name":"promoted","source":"promoted"}}`))
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
@@ -155,6 +157,13 @@ func TestCoordinatorImageMethods(t *testing.T) {
 		if !strings.Contains(gotBody, want) {
 			t.Fatalf("body missing %q: %s", want, gotBody)
 		}
+	}
+	promoted, err := client.PromoteAWSImage(context.Background(), "eu-west-1", "ami-789")
+	if err != nil || promoted.ID != "ami-789" || gotMethod != http.MethodPost || !strings.Contains(gotPath, "/v1/images/promote?") {
+		t.Fatalf("promoted=%#v method=%s path=%s err=%v", promoted, gotMethod, gotPath, err)
+	}
+	if !strings.Contains(gotBody, `"imageID":"ami-789"`) {
+		t.Fatalf("promote body missing imageID: %s", gotBody)
 	}
 }
 

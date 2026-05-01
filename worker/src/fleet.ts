@@ -7,6 +7,7 @@ import { githubAuthRoute } from "./oauth";
 import { leaseSlugFromID, normalizeLeaseSlug, slugWithCollisionSuffix } from "./slug";
 import type {
   AWSImageCreateRequest,
+  AWSImagePromoteRequest,
   AWSImageView,
   Env,
   LeaseRecord,
@@ -22,6 +23,10 @@ import type {
 import { costLimits, enforceCostLimits, leaseCost, requestOrg, usageSummary } from "./usage";
 
 const fleetID = "default";
+
+function activeAWSImageKey(region: string): string {
+  return `image:aws:${region}:active`;
+}
 
 export class FleetDurableObject implements DurableObject {
   constructor(
@@ -106,6 +111,10 @@ export class FleetDurableObject implements DurableObject {
     const config = leaseConfig(input);
     if (config.provider === "aws" && config.awsSSHCIDRs.length === 0) {
       config.awsSSHCIDRs = requestSourceCIDRs(request);
+    }
+    if (config.provider === "aws" && !config.awsAMI && !this.env.CRABBOX_AWS_AMI) {
+      config.awsAMI =
+        (await this.state.storage.get<string>(activeAWSImageKey(config.awsRegion))) ?? "";
     }
     const leaseID = validLeaseID(input.leaseID) ? input.leaseID : newLeaseID();
     const leases = await this.leaseRecords();
@@ -286,12 +295,17 @@ export class FleetDurableObject implements DurableObject {
       );
     }
     if (method === "GET" && action === "current") {
+      const activeImageID = await this.state.storage.get<string>(activeAWSImageKey(region));
       const config = leaseConfig({
         provider: "aws",
         awsRegion: region,
+        ...(activeImageID ? { awsAMI: activeImageID } : {}),
         sshPublicKey: "ssh-ed25519 crabbox-image-inspect",
       });
       const image = await this.provider("aws", region).currentImage?.(config);
+      if (image && activeImageID) {
+        image.source = "promoted";
+      }
       return json({ image });
     }
     if (method === "GET" && !action) {
@@ -331,6 +345,34 @@ export class FleetDurableObject implements DurableObject {
         Boolean(input.noReboot),
         Boolean(input.wait),
       );
+      return json({ image });
+    }
+    if (method === "POST" && action === "promote") {
+      const input = await readJson<AWSImagePromoteRequest>(request);
+      if (input.provider && input.provider !== "aws") {
+        return json(
+          { error: "bad_request", message: "image promote only supports provider=aws" },
+          { status: 400 },
+        );
+      }
+      const imageID = input.imageID?.trim() ?? "";
+      if (!imageID.startsWith("ami-")) {
+        return json(
+          { error: "bad_request", message: "valid imageID is required" },
+          { status: 400 },
+        );
+      }
+      const config = leaseConfig({
+        provider: "aws",
+        awsRegion: region,
+        awsAMI: imageID,
+        sshPublicKey: "ssh-ed25519 crabbox-image-promote",
+      });
+      const image = await this.provider("aws", region).currentImage?.(config);
+      await this.state.storage.put(activeAWSImageKey(region), imageID);
+      if (image) {
+        image.source = "promoted";
+      }
       return json({ image });
     }
     return json({ error: "not_found" }, { status: 404 });

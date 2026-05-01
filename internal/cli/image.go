@@ -9,7 +9,7 @@ import (
 
 func (a App) image(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return exit(2, "usage: crabbox image current|list|create")
+		return exit(2, "usage: crabbox image current|list|create|promote")
 	}
 	switch args[0] {
 	case "current":
@@ -127,7 +127,7 @@ func (a App) imageCreate(ctx context.Context, args []string) error {
 	return printAWSImage(a.Stdout, image, *jsonOut)
 }
 
-func (a App) imagePromote(_ context.Context, args []string) error {
+func (a App) imagePromote(ctx context.Context, args []string) error {
 	fs := newFlagSet("image promote", a.Stderr)
 	provider := fs.String("provider", "aws", "provider: aws")
 	jsonOut := fs.Bool("json", false, "print JSON")
@@ -143,6 +143,19 @@ func (a App) imagePromote(_ context.Context, args []string) error {
 	ami := fs.Arg(0)
 	if !strings.HasPrefix(ami, "ami-") {
 		return exit(2, "invalid AWS AMI id: %s", ami)
+	}
+	cfg, err := imageAWSConfig(*provider)
+	if err != nil {
+		return err
+	}
+	if coord, ok, err := newCoordinatorClient(cfg); err != nil {
+		return err
+	} else if ok {
+		image, err := coord.PromoteAWSImage(ctx, cfg.AWSRegion, ami)
+		if err != nil {
+			return err
+		}
+		return printAWSImage(a.Stdout, image, *jsonOut)
 	}
 	path := writableConfigPath()
 	if path == "" {

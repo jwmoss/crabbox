@@ -293,15 +293,21 @@ describe("fleet lease identity and idle", () => {
     expect(allowed.status).toBe(200);
   });
 
-  it("keeps AWS image routes admin-only and creates images from leases", async () => {
+  it("keeps AWS image routes admin-only and creates, promotes, and reuses images", async () => {
     const storage = new MemoryStorage();
     const calls: string[] = [];
+    let createdAMI = "";
     const fleet = testFleet(storage, {
       aws: {
         ...fakeProvider(),
-        async currentImage() {
-          calls.push("current");
-          return { id: "ami-current", name: "current", source: "config", region: "eu-west-1" };
+        async currentImage(config: { awsAMI: string }) {
+          calls.push(`current:${config.awsAMI || "default"}`);
+          return {
+            id: config.awsAMI || "ami-current",
+            name: "current",
+            source: "config",
+            region: "eu-west-1",
+          };
         },
         async listAWSImages(name: string) {
           calls.push(`list:${name}`);
@@ -309,7 +315,8 @@ describe("fleet lease identity and idle", () => {
         },
         async createAWSImage(lease: LeaseRecord, name: string) {
           calls.push(`create:${lease.id}:${name}`);
-          return { id: "ami-created", name, source: "created", region: "eu-west-1" };
+          createdAMI = "ami-created";
+          return { id: createdAMI, name, source: "created", region: "eu-west-1" };
         },
       },
     });
@@ -358,7 +365,60 @@ describe("fleet lease identity and idle", () => {
     );
     expect(created.status).toBe(200);
     await expect(created.json()).resolves.toMatchObject({ image: { id: "ami-created" } });
-    expect(calls).toEqual(["current", "list:openclaw-*", "create:cbx_000000000001:openclaw-cache"]);
+
+    const promoted = await fleet.fetch(
+      request("POST", "/v1/images/promote?provider=aws", {
+        headers: { "x-crabbox-admin": "true" },
+        body: { provider: "aws", imageID: createdAMI },
+      }),
+    );
+    expect(promoted.status).toBe(200);
+    await expect(promoted.json()).resolves.toMatchObject({
+      image: { id: "ami-created", source: "promoted" },
+    });
+    expect(storage.value("image:aws:eu-west-1:active")).toBe("ami-created");
+
+    const promotedCurrent = await fleet.fetch(
+      request("GET", "/v1/images/current?provider=aws", {
+        headers: { "x-crabbox-admin": "true" },
+      }),
+    );
+    expect(promotedCurrent.status).toBe(200);
+    await expect(promotedCurrent.json()).resolves.toMatchObject({
+      image: { id: "ami-created", source: "promoted" },
+    });
+
+    expect(calls).toEqual([
+      "current:default",
+      "list:openclaw-*",
+      "create:cbx_000000000001:openclaw-cache",
+      "current:ami-created",
+      "current:ami-created",
+    ]);
+  });
+
+  it("uses the promoted AWS image for future leases", async () => {
+    const storage = new MemoryStorage();
+    let usedAMI = "";
+    storage.seed("image:aws:eu-west-1:active", "ami-promoted");
+    const fleet = testFleet(storage, {
+      aws: fakeProvider((config) => {
+        usedAMI = config.awsAMI ?? "";
+      }),
+    });
+
+    const created = await fleet.fetch(
+      request("POST", "/v1/leases", {
+        headers: { "cf-access-authenticated-user-email": "peter@example.com" },
+        body: {
+          provider: "aws",
+          sshPublicKey: "ssh-ed25519 test",
+        },
+      }),
+    );
+
+    expect(created.status).toBe(201);
+    expect(usedAMI).toBe("ami-promoted");
   });
 });
 
@@ -781,13 +841,13 @@ function testFleet(storage = new MemoryStorage(), providers = {}): FleetDurableO
   );
 }
 
-function fakeProvider(onCreate?: (config: { awsSSHCIDRs: string[] }) => void) {
+function fakeProvider(onCreate?: (config: { awsSSHCIDRs: string[]; awsAMI?: string }) => void) {
   return {
     async listCrabboxServers() {
       return [];
     },
     async createServerWithFallback(
-      config: { awsSSHCIDRs: string[] },
+      config: { awsSSHCIDRs: string[]; awsAMI?: string },
       _leaseID: string,
       slug: string,
     ) {
