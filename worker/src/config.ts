@@ -13,6 +13,7 @@ export interface LeaseConfig {
   awsSubnetID: string;
   awsProfile: string;
   awsRootGB: number;
+  awsSSHCIDRs: string[];
   capacityMarket: "spot" | "on-demand";
   capacityStrategy:
     | "most-available"
@@ -58,6 +59,7 @@ export function leaseConfig(input: LeaseRequest): LeaseConfig {
     awsSubnetID: input.awsSubnetID ?? "",
     awsProfile: input.awsProfile ?? "",
     awsRootGB: input.awsRootGB ?? 400,
+    awsSSHCIDRs: validCIDRs(input.awsSSHCIDRs ?? []),
     capacityMarket: input.capacity?.market ?? "spot",
     capacityStrategy: input.capacity?.strategy ?? "most-available",
     capacityFallback: input.capacity?.fallback ?? "on-demand-after-120s",
@@ -72,6 +74,15 @@ export function leaseConfig(input: LeaseRequest): LeaseConfig {
     keep: input.keep ?? false,
     sshPublicKey,
   };
+}
+
+export function validCIDRs(values: string[]): string[] {
+  const cidrs = values.map((value) => value.trim()).filter(Boolean);
+  return cidrs.filter(
+    (cidr) =>
+      /^(\d{1,3}\.){3}\d{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$/.test(cidr) ||
+      /^[0-9a-f:]+\/([0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8])$/i.test(cidr),
+  );
 }
 
 export function serverTypeForClass(machineClass: string): string {

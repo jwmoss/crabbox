@@ -24,13 +24,26 @@ API surface:
 ```text
 GET  /v1/health
 GET  /v1/pool
+GET  /v1/whoami
 POST /v1/leases
 GET  /v1/leases
-GET  /v1/leases/{id}
-POST /v1/leases/{id}/heartbeat
-POST /v1/leases/{id}/release
+GET  /v1/leases/{id-or-slug}
+POST /v1/leases/{id-or-slug}/heartbeat
+POST /v1/leases/{id-or-slug}/release
+GET  /v1/runs
+POST /v1/runs
+GET  /v1/runs/{run-id}
+GET  /v1/runs/{run-id}/logs
+POST /v1/runs/{run-id}/finish
 GET  /v1/usage
+GET  /v1/admin/leases
+POST /v1/admin/leases/{id-or-slug}/release
+POST /v1/admin/leases/{id-or-slug}/delete
 ```
+
+GitHub browser-login tokens are owner/org scoped for lease, run, log, and usage routes. Shared-token admin auth is required for `GET /v1/pool`, admin lease routes, and fleet-wide usage/listing.
+
+Lease responses include the canonical `cbx_...` ID, friendly slug when present, provider metadata, owner/org, `createdAt`, `lastTouchedAt`, `idleTimeoutSeconds`, `ttlSeconds`, and computed `expiresAt`. Heartbeat is a touch and can update idle timeout only when the request explicitly sends `idleTimeoutSeconds`.
 
 The CLI owns local config, per-lease SSH keys, SSH readiness, sync, command execution, output streaming, and local fallback handling.
 

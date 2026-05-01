@@ -2,7 +2,7 @@
 
 Read when:
 
-- changing Hetzner or AWS provisioning;
+- changing Hetzner, AWS, or Blacksmith Testbox provisioning;
 - adding a backend;
 - adjusting machine classes, fallback order, regions, or images.
 
@@ -25,7 +25,7 @@ AWS behavior:
 
 - signs EC2 Query API calls inside the Worker;
 - imports or reuses an EC2 key pair;
-- creates or reuses the `crabbox-runners` security group;
+- creates or reuses the `crabbox-runners` security group with SSH ingress limited to configured CIDRs or the request source IP;
 - launches one-time Spot instances;
 - tags instances, volumes, and Spot requests;
 - falls back across broad C/M/R instance families;
@@ -51,8 +51,11 @@ beast     c7a.48xlarge, c7i.48xlarge, m7a.48xlarge, m7i.48xlarge, r7a.48xlarge, 
 
 Direct provider mode still exists when no coordinator is configured. It uses local AWS credentials or `HCLOUD_TOKEN`/`HETZNER_TOKEN` and should stay secondary to the brokered path.
 
+Crabbox can also wrap Blacksmith Testboxes with `provider: blacksmith-testbox`. That backend does not use the Crabbox broker or direct cloud credentials. It shells out to the authenticated Blacksmith CLI for `testbox warmup`, `run`, `status`, `list`, and `stop`, while Crabbox keeps local slugs, repo claims, config, and timing summaries. See [Blacksmith Testbox](blacksmith-testbox.md).
+
 Related docs:
 
 - [Infrastructure](../infrastructure.md)
+- [Blacksmith Testbox](blacksmith-testbox.md)
 - [Runner bootstrap](runner-bootstrap.md)
 - [Cost and usage](cost-usage.md)

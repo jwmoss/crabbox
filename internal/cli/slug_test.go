@@ -70,7 +70,7 @@ func TestLeaseProviderNameUsesSlug(t *testing.T) {
 	}
 }
 
-func TestFindServerByAliasPrefersCanonicalID(t *testing.T) {
+func TestFindServerByAliasDoesNotLetMalformedLeaseShadowSlug(t *testing.T) {
 	servers := []Server{
 		{Name: "crabbox-blue-lobster", Labels: map[string]string{"lease": "cbx_111111111111", "slug": "blue-lobster"}},
 		{Name: "crabbox-cbx-222222222222", Labels: map[string]string{"lease": "blue-lobster", "slug": "amber-krill"}},
@@ -79,7 +79,21 @@ func TestFindServerByAliasPrefersCanonicalID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if leaseID != "blue-lobster" {
+	if leaseID != "cbx_111111111111" {
+		t.Fatalf("leaseID=%q want slug match with canonical lease", leaseID)
+	}
+}
+
+func TestFindServerByAliasPrefersCanonicalID(t *testing.T) {
+	servers := []Server{
+		{Name: "crabbox-blue-lobster", Labels: map[string]string{"lease": "cbx_111111111111", "slug": "blue-lobster"}},
+		{Name: "crabbox-amber-krill", Labels: map[string]string{"lease": "cbx_222222222222", "slug": "amber-krill"}},
+	}
+	_, leaseID, err := findServerByAlias(servers, "cbx_222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leaseID != "cbx_222222222222" {
 		t.Fatalf("leaseID=%q want canonical ID exact match", leaseID)
 	}
 }

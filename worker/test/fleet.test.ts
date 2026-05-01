@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { FleetDurableObject } from "../src/fleet";
-import type { Env, LeaseRecord } from "../src/types";
+import type { Env, LeaseRecord, RunRecord } from "../src/types";
 
 class MemoryStorage {
   private readonly values = new Map<string, unknown>();
@@ -12,6 +12,10 @@ class MemoryStorage {
 
   async put<T>(key: string, value: T): Promise<void> {
     this.values.set(key, value);
+  }
+
+  async delete(key: string): Promise<void> {
+    this.values.delete(key);
   }
 
   async deleteAlarm(): Promise<void> {}
@@ -38,6 +42,152 @@ class MemoryStorage {
 }
 
 describe("fleet lease identity and idle", () => {
+  it("creates leases through the public route with slug and idle metadata", async () => {
+    const storage = new MemoryStorage();
+    const fleet = testFleet(storage, {
+      hetzner: fakeProvider(),
+    });
+    const create = await fleet.fetch(
+      request("POST", "/v1/leases", {
+        headers: {
+          "cf-access-authenticated-user-email": "peter@example.com",
+          "x-crabbox-org": "openclaw",
+        },
+        body: {
+          leaseID: "cbx_abcdef123456",
+          slug: "Blue Lobster",
+          provider: "hetzner",
+          class: "standard",
+          serverType: "cpx62",
+          ttlSeconds: 1200,
+          idleTimeoutSeconds: 360,
+          keep: true,
+          sshPublicKey: "ssh-ed25519 test",
+        },
+      }),
+    );
+    expect(create.status).toBe(201);
+    const { lease } = (await create.json()) as { lease: LeaseRecord };
+    expect(lease.id).toBe("cbx_abcdef123456");
+    expect(lease.slug).toBe("blue-lobster");
+    expect(lease.idleTimeoutSeconds).toBe(360);
+    expect(lease.ttlSeconds).toBe(1200);
+    expect(lease.lastTouchedAt).toBeTruthy();
+    expect(Date.parse(lease.expiresAt)).toBeGreaterThan(Date.parse(lease.createdAt));
+
+    const bySlug = await fleet.fetch(
+      request("GET", "/v1/leases/blue-lobster", {
+        headers: {
+          "cf-access-authenticated-user-email": "peter@example.com",
+          "x-crabbox-org": "openclaw",
+        },
+      }),
+    );
+    expect(bySlug.status).toBe(200);
+    const found = (await bySlug.json()) as { lease: LeaseRecord };
+    expect(found.lease.id).toBe("cbx_abcdef123456");
+    expect(found.lease.slug).toBe("blue-lobster");
+  });
+
+  it("passes the Cloudflare request source IP as AWS SSH ingress CIDR", async () => {
+    let awsCIDRs: string[] = [];
+    const fleet = testFleet(new MemoryStorage(), {
+      aws: fakeProvider((config) => {
+        awsCIDRs = config.awsSSHCIDRs;
+      }),
+    });
+    const create = await fleet.fetch(
+      request("POST", "/v1/leases", {
+        headers: {
+          "cf-access-authenticated-user-email": "peter@example.com",
+          "cf-connecting-ip": "203.0.113.7",
+          "x-crabbox-org": "openclaw",
+        },
+        body: {
+          leaseID: "cbx_abcdef123456",
+          provider: "aws",
+          class: "standard",
+          serverType: "c7a.8xlarge",
+          ttlSeconds: 1200,
+          idleTimeoutSeconds: 360,
+          sshPublicKey: "ssh-ed25519 test",
+        },
+      }),
+    );
+    expect(create.status).toBe(201);
+    expect(awsCIDRs).toEqual(["203.0.113.7/32"]);
+  });
+
+  it("honors requested AWS SSH ingress CIDRs over request source IP", async () => {
+    let awsCIDRs: string[] = [];
+    const fleet = testFleet(new MemoryStorage(), {
+      aws: fakeProvider((config) => {
+        awsCIDRs = config.awsSSHCIDRs;
+      }),
+    });
+    const create = await fleet.fetch(
+      request("POST", "/v1/leases", {
+        headers: {
+          "cf-access-authenticated-user-email": "peter@example.com",
+          "cf-connecting-ip": "203.0.113.7",
+          "x-crabbox-org": "openclaw",
+        },
+        body: {
+          leaseID: "cbx_abcdef123456",
+          provider: "aws",
+          class: "standard",
+          serverType: "c7a.8xlarge",
+          awsSSHCIDRs: ["198.51.100.0/24"],
+          ttlSeconds: 1200,
+          idleTimeoutSeconds: 360,
+          sshPublicKey: "ssh-ed25519 test",
+        },
+      }),
+    );
+    expect(create.status).toBe(201);
+    expect(awsCIDRs).toEqual(["198.51.100.0/24"]);
+  });
+
+  it("scopes non-admin usage to the current owner", async () => {
+    const storage = new MemoryStorage();
+    const fleet = testFleet(storage);
+    storage.seed(
+      "lease:cbx_000000000001",
+      testLease({
+        id: "cbx_000000000001",
+        owner: "peter@example.com",
+        org: "openclaw",
+        estimatedHourlyUSD: 1,
+        maxEstimatedUSD: 1,
+      }),
+    );
+    storage.seed(
+      "lease:cbx_000000000002",
+      testLease({
+        id: "cbx_000000000002",
+        owner: "friend@example.com",
+        org: "openclaw",
+        estimatedHourlyUSD: 1,
+        maxEstimatedUSD: 1,
+      }),
+    );
+    const usage = await fleet.fetch(
+      request("GET", "/v1/usage?scope=all&owner=peter@example.com", {
+        headers: {
+          "cf-access-authenticated-user-email": "friend@example.com",
+          "x-crabbox-org": "openclaw",
+        },
+      }),
+    );
+    expect(usage.status).toBe(200);
+    const body = (await usage.json()) as {
+      usage: { scope: string; owner: string; leases: number };
+    };
+    expect(body.usage.scope).toBe("user");
+    expect(body.usage.owner).toBe("friend@example.com");
+    expect(body.usage.leases).toBe(1);
+  });
+
   it("resolves owner-scoped slugs and heartbeat extends idle expiry", async () => {
     const storage = new MemoryStorage();
     const fleet = testFleet(storage);
@@ -75,6 +225,73 @@ describe("fleet lease identity and idle", () => {
     expect(lease.idleTimeoutSeconds).toBe(2400);
     expect(Date.parse(lease.expiresAt)).toBeGreaterThan(expiresAt.getTime());
   });
+
+  it("hides exact lease IDs and lists from other non-admin users", async () => {
+    const storage = new MemoryStorage();
+    const fleet = testFleet(storage);
+    storage.seed(
+      "lease:cbx_000000000001",
+      testLease({
+        id: "cbx_000000000001",
+        slug: "blue-lobster",
+        owner: "peter@example.com",
+        org: "openclaw",
+      }),
+    );
+    storage.seed(
+      "lease:cbx_000000000002",
+      testLease({
+        id: "cbx_000000000002",
+        slug: "amber-krill",
+        owner: "friend@example.com",
+        org: "openclaw",
+      }),
+    );
+    const friendHeaders = {
+      "cf-access-authenticated-user-email": "friend@example.com",
+      "x-crabbox-org": "openclaw",
+    };
+
+    const byExactID = await fleet.fetch(
+      request("GET", "/v1/leases/cbx_000000000001", { headers: friendHeaders }),
+    );
+    expect(byExactID.status).toBe(404);
+
+    const heartbeat = await fleet.fetch(
+      request("POST", "/v1/leases/cbx_000000000001/heartbeat", {
+        headers: friendHeaders,
+        body: {},
+      }),
+    );
+    expect(heartbeat.status).toBe(404);
+
+    const list = await fleet.fetch(request("GET", "/v1/leases", { headers: friendHeaders }));
+    const body = (await list.json()) as { leases: LeaseRecord[] };
+    expect(body.leases.map((lease) => lease.id)).toEqual(["cbx_000000000002"]);
+  });
+
+  it("keeps pool inventory admin-only", async () => {
+    const fleet = testFleet(new MemoryStorage(), {
+      aws: fakeProvider(),
+      hetzner: fakeProvider(),
+    });
+    const denied = await fleet.fetch(
+      request("GET", "/v1/pool", {
+        headers: {
+          "cf-access-authenticated-user-email": "friend@example.com",
+          "x-crabbox-org": "openclaw",
+        },
+      }),
+    );
+    expect(denied.status).toBe(403);
+
+    const allowed = await fleet.fetch(
+      request("GET", "/v1/pool", {
+        headers: { "x-crabbox-admin": "true" },
+      }),
+    );
+    expect(allowed.status).toBe(200);
+  });
 });
 
 describe("fleet run history", () => {
@@ -101,6 +318,7 @@ describe("fleet run history", () => {
 
     const finish = await fleet.fetch(
       request("POST", `/v1/runs/${run.id}/finish`, {
+        headers: ownerHeaders,
         body: {
           exitCode: 0,
           syncMs: 12,
@@ -128,14 +346,69 @@ describe("fleet run history", () => {
     expect(finished.run.logBytes).toBe(3);
     expect(finished.run.results?.tests).toBe(2);
 
-    const listed = await fleet.fetch(request("GET", "/v1/runs?leaseID=cbx_000000000001"));
+    const listed = await fleet.fetch(
+      request("GET", "/v1/runs?leaseID=cbx_000000000001", { headers: ownerHeaders }),
+    );
     const listBody = (await listed.json()) as { runs: Array<{ id: string; owner: string }> };
     expect(listBody.runs).toHaveLength(1);
     expect(listBody.runs[0]?.id).toBe(run.id);
     expect(listBody.runs[0]?.owner).toBe("peter@example.com");
 
-    const logs = await fleet.fetch(request("GET", `/v1/runs/${run.id}/logs`));
+    const logs = await fleet.fetch(
+      request("GET", `/v1/runs/${run.id}/logs`, { headers: ownerHeaders }),
+    );
     expect(await logs.text()).toBe("ok\n");
+  });
+
+  it("hides run records and logs from other non-admin users", async () => {
+    const storage = new MemoryStorage();
+    const fleet = testFleet(storage);
+    storage.seed(
+      "run:run_000000000001",
+      testRun({
+        id: "run_000000000001",
+        leaseID: "cbx_000000000001",
+        owner: "peter@example.com",
+        org: "openclaw",
+      }),
+    );
+    storage.seed("runlog:run_000000000001", "secret log\n");
+    storage.seed(
+      "run:run_000000000002",
+      testRun({
+        id: "run_000000000002",
+        leaseID: "cbx_000000000002",
+        owner: "friend@example.com",
+        org: "openclaw",
+      }),
+    );
+    const friendHeaders = {
+      "cf-access-authenticated-user-email": "friend@example.com",
+      "x-crabbox-org": "openclaw",
+    };
+
+    const list = await fleet.fetch(request("GET", "/v1/runs", { headers: friendHeaders }));
+    const listBody = (await list.json()) as { runs: RunRecord[] };
+    expect(listBody.runs.map((run) => run.id)).toEqual(["run_000000000002"]);
+
+    const read = await fleet.fetch(
+      request("GET", "/v1/runs/run_000000000001", { headers: friendHeaders }),
+    );
+    expect(read.status).toBe(404);
+
+    const logs = await fleet.fetch(
+      request("GET", "/v1/runs/run_000000000001/logs", { headers: friendHeaders }),
+    );
+    expect(logs.status).toBe(404);
+
+    const finish = await fleet.fetch(
+      request("POST", "/v1/runs/run_000000000001/finish", {
+        headers: friendHeaders,
+        body: { exitCode: 0, log: "overwrite\n" },
+      }),
+    );
+    expect(finish.status).toBe(404);
+    expect(storage.value<string>("runlog:run_000000000001")).toBe("secret log\n");
   });
 
   it("bounds stored result summaries", async () => {
@@ -192,6 +465,10 @@ describe("fleet run history", () => {
 });
 
 describe("fleet identity", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("reports owner and org from request context", async () => {
     const fleet = testFleet();
     const response = await fleet.fetch(
@@ -208,13 +485,265 @@ describe("fleet identity", () => {
       auth: "bearer",
     });
   });
+
+  it("reports forwarded GitHub auth mode", async () => {
+    const fleet = testFleet();
+    const response = await fleet.fetch(
+      request("GET", "/v1/whoami", {
+        headers: {
+          "x-crabbox-auth": "github",
+          "x-crabbox-owner": "friend@example.com",
+          "x-crabbox-org": "openclaw",
+        },
+      }),
+    );
+    expect(await response.json()).toEqual({
+      owner: "friend@example.com",
+      org: "openclaw",
+      auth: "github",
+    });
+  });
+
+  it("rejects admin routes without an admin token context", async () => {
+    const fleet = testFleet();
+    const response = await fleet.fetch(request("GET", "/v1/admin/leases"));
+    expect(response.status).toBe(403);
+  });
+
+  it("starts GitHub login and keeps polling secret server-side", async () => {
+    const storage = new MemoryStorage();
+    const fleet = new FleetDurableObject(
+      { storage } as unknown as DurableObjectState,
+      {
+        CRABBOX_DEFAULT_ORG: "openclaw",
+        CRABBOX_GITHUB_CLIENT_ID: "github-client",
+        CRABBOX_GITHUB_CLIENT_SECRET: "github-secret",
+        CRABBOX_SHARED_TOKEN: "shared",
+      } as Env,
+    );
+    const pollSecret = "local-poll-secret";
+    const start = await fleet.fetch(
+      request("POST", "/v1/auth/github/start", {
+        body: {
+          pollSecretHash: await sha256HexForTest(pollSecret),
+          provider: "aws",
+        },
+      }),
+    );
+    expect(start.status).toBe(200);
+    const body = (await start.json()) as { loginID: string; url: string };
+    expect(body.loginID).toMatch(/^login_/);
+    const url = new URL(body.url);
+    expect(url.origin + url.pathname).toBe("https://github.com/login/oauth/authorize");
+    expect(url.searchParams.get("client_id")).toBe("github-client");
+    expect(url.searchParams.get("scope")).toBe("read:user user:email read:org");
+
+    const poll = await fleet.fetch(
+      request("POST", "/v1/auth/github/poll", {
+        body: {
+          loginID: body.loginID,
+          pollSecret,
+        },
+      }),
+    );
+    expect(poll.status).toBe(200);
+    await expect(poll.json()).resolves.toMatchObject({ status: "pending" });
+  });
+
+  it("cleans expired GitHub login attempts before rate limiting", async () => {
+    const storage = new MemoryStorage();
+    const fleet = new FleetDurableObject(
+      { storage } as unknown as DurableObjectState,
+      {
+        CRABBOX_DEFAULT_ORG: "openclaw",
+        CRABBOX_GITHUB_CLIENT_ID: "github-client",
+        CRABBOX_GITHUB_CLIENT_SECRET: "github-secret",
+        CRABBOX_SHARED_TOKEN: "shared",
+      } as Env,
+    );
+    storage.seed("oauth:login_old", {
+      id: "login_old",
+      state: "state_old",
+      pollSecretHash: "0".repeat(64),
+      createdAt: "2026-05-01T00:00:00.000Z",
+      expiresAt: "2026-05-01T00:00:00.000Z",
+    });
+    storage.seed("oauth_state:state_old", "login_old");
+
+    const start = await fleet.fetch(
+      request("POST", "/v1/auth/github/start", {
+        body: {
+          pollSecretHash: await sha256HexForTest("new-secret"),
+          provider: "aws",
+        },
+      }),
+    );
+    expect(start.status).toBe(200);
+    expect(storage.value("oauth:login_old")).toBeUndefined();
+    expect(storage.value("oauth_state:state_old")).toBeUndefined();
+  });
+
+  it("requires GitHub org membership before completing login", async () => {
+    const { fleet, loginID, state, pollSecret } = await startGitHubLogin();
+    vi.stubGlobal("fetch", githubFetchMock({ member: false }));
+
+    const callback = await fleet.fetch(
+      request("GET", `/v1/auth/github/callback?code=ok&state=${state}`),
+    );
+    expect(callback.status).toBe(403);
+
+    const poll = await fleet.fetch(
+      request("POST", "/v1/auth/github/poll", {
+        body: {
+          loginID,
+          pollSecret,
+        },
+      }),
+    );
+    expect(poll.status).toBe(400);
+    await expect(poll.json()).resolves.toMatchObject({
+      status: "failed",
+      error: "GitHub user friend is not an active member of openclaw.",
+    });
+  });
+
+  it("mints GitHub login tokens for allowed org members", async () => {
+    const { fleet, loginID, state, pollSecret } = await startGitHubLogin();
+    vi.stubGlobal("fetch", githubFetchMock({ member: true }));
+
+    const callback = await fleet.fetch(
+      request("GET", `/v1/auth/github/callback?code=ok&state=${state}`),
+    );
+    expect(callback.status).toBe(200);
+
+    const poll = await fleet.fetch(
+      request("POST", "/v1/auth/github/poll", {
+        body: {
+          loginID,
+          pollSecret,
+        },
+      }),
+    );
+    expect(poll.status).toBe(200);
+    const body = (await poll.json()) as {
+      status: string;
+      token?: string;
+      owner?: string;
+      org?: string;
+      login?: string;
+    };
+    expect(body).toMatchObject({
+      status: "complete",
+      owner: "friend@example.com",
+      org: "openclaw",
+      login: "friend",
+    });
+    expect(body.token).toMatch(/^cbxu_/);
+  });
 });
 
-function testFleet(storage = new MemoryStorage()): FleetDurableObject {
+async function startGitHubLogin(): Promise<{
+  fleet: FleetDurableObject;
+  loginID: string;
+  pollSecret: string;
+  state: string;
+}> {
+  const storage = new MemoryStorage();
+  const fleet = new FleetDurableObject(
+    { storage } as unknown as DurableObjectState,
+    {
+      CRABBOX_DEFAULT_ORG: "openclaw",
+      CRABBOX_GITHUB_CLIENT_ID: "github-client",
+      CRABBOX_GITHUB_CLIENT_SECRET: "github-secret",
+      CRABBOX_SHARED_TOKEN: "shared",
+      CRABBOX_SESSION_SECRET: "session-secret",
+    } as Env,
+  );
+  const pollSecret = "local-poll-secret";
+  const start = await fleet.fetch(
+    request("POST", "/v1/auth/github/start", {
+      body: {
+        pollSecretHash: await sha256HexForTest(pollSecret),
+        provider: "aws",
+      },
+    }),
+  );
+  expect(start.status).toBe(200);
+  const body = (await start.json()) as { loginID: string; url: string };
+  const url = new URL(body.url);
+  const state = url.searchParams.get("state");
+  expect(state).toBeTruthy();
+  return { fleet, loginID: body.loginID, pollSecret, state: state || "" };
+}
+
+function githubFetchMock({ member }: { member: boolean }) {
+  return vi.fn<(input: RequestInfo | URL) => Promise<Response>>(async (input) => {
+    const url =
+      typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === "https://github.com/login/oauth/access_token") {
+      return jsonResponse({ access_token: "github-access-token" });
+    }
+    if (url === "https://api.github.com/user") {
+      return jsonResponse({ login: "friend", name: "Friendly User", email: null });
+    }
+    if (url === "https://api.github.com/user/emails") {
+      return jsonResponse([{ email: "friend@example.com", primary: true, verified: true }]);
+    }
+    if (url === "https://api.github.com/user/memberships/orgs/openclaw") {
+      return member
+        ? jsonResponse({ state: "active", organization: { login: "openclaw" } })
+        : jsonResponse({ message: "Not Found" }, 404);
+    }
+    return jsonResponse({ message: `unexpected ${url}` }, 500);
+  });
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function testFleet(storage = new MemoryStorage(), providers = {}): FleetDurableObject {
   return new FleetDurableObject(
     { storage } as unknown as DurableObjectState,
     { CRABBOX_DEFAULT_ORG: "default-org" } as Env,
+    providers,
   );
+}
+
+function fakeProvider(onCreate?: (config: { awsSSHCIDRs: string[] }) => void) {
+  return {
+    async listCrabboxServers() {
+      return [];
+    },
+    async createServerWithFallback(
+      config: { awsSSHCIDRs: string[] },
+      _leaseID: string,
+      slug: string,
+    ) {
+      onCreate?.(config);
+      return {
+        server: {
+          provider: "hetzner",
+          id: 123,
+          cloudID: "123",
+          name: `crabbox-${slug}`,
+          status: "running",
+          serverType: "cpx62",
+          host: "192.0.2.10",
+          labels: {},
+        },
+        serverType: "cpx62",
+      };
+    },
+    async deleteServer() {},
+    async deleteSSHKey() {},
+    async hourlyPriceUSD() {
+      return 0.1;
+    },
+  };
 }
 
 function testLease(overrides: Partial<LeaseRecord>): LeaseRecord {
@@ -246,6 +775,24 @@ function testLease(overrides: Partial<LeaseRecord>): LeaseRecord {
   };
 }
 
+function testRun(overrides: Partial<RunRecord>): RunRecord {
+  return {
+    id: "run_000000000000",
+    leaseID: "cbx_000000000000",
+    owner: "peter@example.com",
+    org: "openclaw",
+    provider: "hetzner",
+    class: "standard",
+    serverType: "cpx62",
+    command: ["echo", "ok"],
+    state: "running",
+    logBytes: 0,
+    logTruncated: false,
+    startedAt: "2026-05-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 function request(
   method: string,
   path: string,
@@ -259,4 +806,9 @@ function request(
     },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
+}
+
+async function sha256HexForTest(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

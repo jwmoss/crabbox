@@ -1,4 +1,6 @@
-# Crabbox Docs
+# 🦀 Crabbox Docs
+
+**Warm a box, sync the diff, run the suite.**
 
 ## What Crabbox is
 
@@ -17,7 +19,7 @@ crabbox CLI    -- HTTPS --> Fleet Durable Object  -->   Hetzner / AWS Spot
    +------------ SSH + rsync to leased runner <--------------+
 ```
 
-The CLI is a Go binary. The broker is a Cloudflare Worker plus a single Durable Object. Runners are vanilla Ubuntu boxes prepared by cloud-init with Node, pnpm, Docker, Git, rsync, and `/work/crabbox`. Runners hold no broker credentials - they are leaf nodes.
+The CLI is a Go binary. The broker is a Cloudflare Worker plus a single Durable Object. Runners are vanilla Ubuntu boxes prepared by cloud-init with SSH, Git, rsync, curl, jq, and `/work/crabbox`. Project runtimes come from Actions hydration or repo-owned setup. Runners hold no broker credentials - they are leaf nodes.
 
 ## A run, end to end
 
@@ -28,7 +30,15 @@ The CLI is a Go binary. The broker is a Cloudflare Worker plus a single Durable 
 5. CLI runs the command over SSH, streams output, sends heartbeats/touches.
 6. CLI releases the lease unless `--keep` is set; kept leases still auto-release after idle timeout, and the broker frees reserved cost when the lease closes.
 
-See [How Crabbox Works](how-it-works.md) for the full picture, including warm-machine reuse and the brokered vs direct provider paths.
+See [How Crabbox Works](how-it-works.md) for the full picture, including warm-machine reuse and the brokered vs direct provider paths. See [Source Map](source-map.md) when you need to trace a documented behavior back to code.
+
+## Install
+
+```sh
+brew install openclaw/tap/crabbox
+```
+
+Verify with `crabbox --version`.
 
 ## Quick start
 
@@ -67,11 +77,11 @@ Pick whichever matches your intent:
 - **Get the mental model:** [How Crabbox Works](how-it-works.md), [Architecture](architecture.md), [Orchestrator](orchestrator.md).
 - **Use the CLI:** [CLI](cli.md), [Commands](commands/README.md), [Features](features/README.md), [Actions hydration](features/actions-hydration.md).
 - **Operate it:** [Operations](operations.md), [Observability](observability.md), [Troubleshooting](troubleshooting.md), [Performance](performance.md).
-- **Set it up or audit it:** [Infrastructure](infrastructure.md), [Security](security.md), [MVP Plan](mvp-plan.md).
+- **Set it up or audit it:** [Infrastructure](infrastructure.md), [Security](security.md), [Source Map](source-map.md), [MVP Plan](mvp-plan.md).
 
 ## About these docs
 
-Markdown in this directory is the source of truth. The GitHub Pages site at <https://openclaw.github.io/crabbox/> is generated from those files by `scripts/build-docs-site.mjs` and deployed by `.github/workflows/pages.yml`. Pages must be enabled on the repository or organization for the workflow to publish.
+Markdown in this directory is the user-facing documentation source. Implementation truth stays in code; [Source Map](source-map.md) lists the files behind each documented behavior. The GitHub Pages site at <https://openclaw.github.io/crabbox/> is generated from these Markdown files by `scripts/build-docs-site.mjs` and deployed by `.github/workflows/pages.yml`. Pages must be enabled on the repository or organization for the workflow to publish.
 
 Build the docs site locally:
 

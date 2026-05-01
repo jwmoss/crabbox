@@ -17,7 +17,7 @@ func (a App) pool(ctx context.Context, args []string) error {
 
 func (a App) list(ctx context.Context, args []string) error {
 	fs := newFlagSet("list", a.Stderr)
-	provider := fs.String("provider", defaultConfig().Provider, "provider: hetzner or aws")
+	provider := fs.String("provider", defaultConfig().Provider, "provider: hetzner, aws, or blacksmith-testbox")
 	jsonOut := fs.Bool("json", false, "print JSON")
 	if err := parseFlags(fs, args); err != nil {
 		return err
@@ -27,6 +27,9 @@ func (a App) list(ctx context.Context, args []string) error {
 		return err
 	}
 	cfg.Provider = *provider
+	if isBlacksmithProvider(cfg.Provider) {
+		return a.blacksmithList(ctx, cfg, *jsonOut)
+	}
 	if coord, ok, err := newCoordinatorClient(cfg); err != nil {
 		return err
 	} else if ok {
@@ -198,10 +201,7 @@ func cleanupExpiry(labels map[string]string) (time.Time, bool) {
 		if value == "" {
 			continue
 		}
-		if parsed, err := time.Parse(time.RFC3339, value); err == nil {
-			return parsed, true
-		}
-		if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		if parsed, ok := parseLeaseLabelTime(value); ok {
 			return parsed, true
 		}
 	}
@@ -209,12 +209,5 @@ func cleanupExpiry(labels map[string]string) (time.Time, bool) {
 }
 
 func directLeaseExpiresAt(now time.Time, cfg Config) time.Time {
-	expiresAt := now.Add(cfg.IdleTimeout)
-	if cfg.TTL > 0 {
-		ttlExpiresAt := now.Add(cfg.TTL)
-		if ttlExpiresAt.Before(expiresAt) {
-			expiresAt = ttlExpiresAt
-		}
-	}
-	return expiresAt
+	return directLeaseExpiresAtFrom(now, now, cfg.TTL, cfg.IdleTimeout)
 }

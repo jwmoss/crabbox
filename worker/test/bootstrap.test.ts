@@ -26,6 +26,7 @@ const config: LeaseConfig = {
   providerKey: "crabbox-steipete",
   workRoot: "/work/crabbox",
   ttlSeconds: 1200,
+  idleTimeoutSeconds: 360,
   keep: false,
   sshPublicKey: "ssh-ed25519 test",
 };
@@ -38,11 +39,22 @@ describe("cloud-init bootstrap", () => {
     expect(got).toContain('Acquire::Retries "8";');
     expect(got).toContain("retry apt-get update");
     expect(got).toContain(
-      "retry apt-get install -y --no-install-recommends openssh-server ca-certificates curl git rsync build-essential docker.io jq",
+      "retry apt-get install -y --no-install-recommends openssh-server ca-certificates curl git rsync jq",
     );
-    expect(got).toContain("https://deb.nodesource.com/setup_24.x");
-    expect(got).toContain("retry corepack prepare pnpm@10.33.2 --activate");
-    expect(got).toContain("docker --version");
+    expect(got).toContain("curl --version >/dev/null");
+    expect(got).toContain("test -f /var/lib/crabbox/bootstrapped");
+    expect(got).toContain("test -w /work/crabbox");
+    expect(got).toContain("touch /var/lib/crabbox/bootstrapped");
     expect(got).not.toContain("\npackages:\n");
+    expect(got).not.toContain("go version");
+    expect(got).not.toContain("golang-go");
+    expect(got).not.toContain("go.dev/dl/go");
+    expect(got).not.toContain("/usr/local/go");
+    expect(got).not.toContain("node --version");
+    expect(got).not.toContain("pnpm --version");
+    expect(got).not.toContain("docker --version");
+    expect(got).not.toContain("build-essential");
+    expect(got).not.toContain("docker.io");
+    expect(got).not.toContain("corepack");
   });
 });

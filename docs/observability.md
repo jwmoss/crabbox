@@ -25,7 +25,7 @@ Important fields:
 - owner and org;
 - provider and server type;
 - state;
-- expiry;
+- `createdAt`, `lastTouchedAt`, `idleTimeoutSeconds`, `ttlSeconds`, and `expiresAt`;
 - public address;
 - SSH user and port;
 - keep/delete behavior.
@@ -73,8 +73,8 @@ bin/crabbox inspect --id blue-lobster --json
 Useful remote checks:
 
 ```sh
-test -f /var/lib/crabbox-ready
-systemctl status docker --no-pager
+crabbox-ready
+test -f /var/lib/crabbox/bootstrapped
 df -h
 free -h
 ps aux --sort=-%cpu | head

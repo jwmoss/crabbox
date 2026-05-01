@@ -37,6 +37,7 @@ type Config struct {
 	EnvAllow    []string
 	Capacity    CapacityConfig
 	Actions     ActionsConfig
+	Blacksmith  BlacksmithConfig
 	Results     ResultsConfig
 	Cache       CacheConfig
 }
@@ -73,6 +74,15 @@ type ActionsConfig struct {
 	RunnerLabels  []string
 	RunnerVersion string
 	Ephemeral     bool
+}
+
+type BlacksmithConfig struct {
+	Org         string
+	Workflow    string
+	Job         string
+	Ref         string
+	IdleTimeout time.Duration
+	Debug       bool
 }
 
 type ResultsConfig struct {
@@ -167,26 +177,27 @@ func baseConfig() Config {
 }
 
 type fileConfig struct {
-	Profile          string              `yaml:"profile,omitempty"`
-	Provider         string              `yaml:"provider,omitempty"`
-	Class            string              `yaml:"class,omitempty"`
-	ServerType       string              `yaml:"serverType,omitempty"`
-	Coordinator      string              `yaml:"coordinator,omitempty"`
-	CoordinatorToken string              `yaml:"coordinatorToken,omitempty"`
-	Broker           *fileBrokerConfig   `yaml:"broker,omitempty"`
-	Hetzner          *fileHetznerConfig  `yaml:"hetzner,omitempty"`
-	AWS              *fileAWSConfig      `yaml:"aws,omitempty"`
-	SSH              *fileSSHConfig      `yaml:"ssh,omitempty"`
-	Sync             *fileSyncConfig     `yaml:"sync,omitempty"`
-	Env              *fileEnvConfig      `yaml:"env,omitempty"`
-	Capacity         *fileCapacityConfig `yaml:"capacity,omitempty"`
-	Actions          *fileActionsConfig  `yaml:"actions,omitempty"`
-	Results          *fileResultsConfig  `yaml:"results,omitempty"`
-	Cache            *fileCacheConfig    `yaml:"cache,omitempty"`
-	Lease            *fileLeaseConfig    `yaml:"lease,omitempty"`
-	TTL              string              `yaml:"ttl,omitempty"`
-	IdleTimeout      string              `yaml:"idleTimeout,omitempty"`
-	WorkRoot         string              `yaml:"workRoot,omitempty"`
+	Profile          string                `yaml:"profile,omitempty"`
+	Provider         string                `yaml:"provider,omitempty"`
+	Class            string                `yaml:"class,omitempty"`
+	ServerType       string                `yaml:"serverType,omitempty"`
+	Coordinator      string                `yaml:"coordinator,omitempty"`
+	CoordinatorToken string                `yaml:"coordinatorToken,omitempty"`
+	Broker           *fileBrokerConfig     `yaml:"broker,omitempty"`
+	Hetzner          *fileHetznerConfig    `yaml:"hetzner,omitempty"`
+	AWS              *fileAWSConfig        `yaml:"aws,omitempty"`
+	SSH              *fileSSHConfig        `yaml:"ssh,omitempty"`
+	Sync             *fileSyncConfig       `yaml:"sync,omitempty"`
+	Env              *fileEnvConfig        `yaml:"env,omitempty"`
+	Capacity         *fileCapacityConfig   `yaml:"capacity,omitempty"`
+	Actions          *fileActionsConfig    `yaml:"actions,omitempty"`
+	Blacksmith       *fileBlacksmithConfig `yaml:"blacksmith,omitempty"`
+	Results          *fileResultsConfig    `yaml:"results,omitempty"`
+	Cache            *fileCacheConfig      `yaml:"cache,omitempty"`
+	Lease            *fileLeaseConfig      `yaml:"lease,omitempty"`
+	TTL              string                `yaml:"ttl,omitempty"`
+	IdleTimeout      string                `yaml:"idleTimeout,omitempty"`
+	WorkRoot         string                `yaml:"workRoot,omitempty"`
 }
 
 type fileBrokerConfig struct {
@@ -253,6 +264,15 @@ type fileActionsConfig struct {
 	RunnerLabels  []string `yaml:"runnerLabels,omitempty"`
 	RunnerVersion string   `yaml:"runnerVersion,omitempty"`
 	Ephemeral     *bool    `yaml:"ephemeral,omitempty"`
+}
+
+type fileBlacksmithConfig struct {
+	Org         string `yaml:"org,omitempty"`
+	Workflow    string `yaml:"workflow,omitempty"`
+	Job         string `yaml:"job,omitempty"`
+	Ref         string `yaml:"ref,omitempty"`
+	IdleTimeout string `yaml:"idleTimeout,omitempty"`
+	Debug       *bool  `yaml:"debug,omitempty"`
 }
 
 type fileResultsConfig struct {
@@ -515,6 +535,24 @@ func applyFileConfig(cfg *Config, file fileConfig) {
 			cfg.Actions.Ephemeral = *file.Actions.Ephemeral
 		}
 	}
+	if file.Blacksmith != nil {
+		if file.Blacksmith.Org != "" {
+			cfg.Blacksmith.Org = file.Blacksmith.Org
+		}
+		if file.Blacksmith.Workflow != "" {
+			cfg.Blacksmith.Workflow = file.Blacksmith.Workflow
+		}
+		if file.Blacksmith.Job != "" {
+			cfg.Blacksmith.Job = file.Blacksmith.Job
+		}
+		if file.Blacksmith.Ref != "" {
+			cfg.Blacksmith.Ref = file.Blacksmith.Ref
+		}
+		applyLeaseDuration(&cfg.Blacksmith.IdleTimeout, file.Blacksmith.IdleTimeout)
+		if file.Blacksmith.Debug != nil {
+			cfg.Blacksmith.Debug = *file.Blacksmith.Debug
+		}
+	}
 	if file.Results != nil && len(file.Results.JUnit) > 0 {
 		cfg.Results.JUnit = appendUniqueStrings(nil, file.Results.JUnit...)
 	}
@@ -583,6 +621,16 @@ func applyEnv(cfg *Config) {
 	cfg.Actions.Ref = getenv("CRABBOX_ACTIONS_REF", cfg.Actions.Ref)
 	cfg.Actions.Repo = getenv("CRABBOX_ACTIONS_REPO", cfg.Actions.Repo)
 	cfg.Actions.RunnerVersion = getenv("CRABBOX_ACTIONS_RUNNER_VERSION", cfg.Actions.RunnerVersion)
+	cfg.Blacksmith.Org = getenv("CRABBOX_BLACKSMITH_ORG", cfg.Blacksmith.Org)
+	cfg.Blacksmith.Workflow = getenv("CRABBOX_BLACKSMITH_WORKFLOW", cfg.Blacksmith.Workflow)
+	cfg.Blacksmith.Job = getenv("CRABBOX_BLACKSMITH_JOB", cfg.Blacksmith.Job)
+	cfg.Blacksmith.Ref = getenv("CRABBOX_BLACKSMITH_REF", cfg.Blacksmith.Ref)
+	if idleTimeout := os.Getenv("CRABBOX_BLACKSMITH_IDLE_TIMEOUT"); idleTimeout != "" {
+		applyLeaseDuration(&cfg.Blacksmith.IdleTimeout, idleTimeout)
+	}
+	if value, ok := getenvBool("CRABBOX_BLACKSMITH_DEBUG"); ok {
+		cfg.Blacksmith.Debug = value
+	}
 	if labels := os.Getenv("CRABBOX_ACTIONS_RUNNER_LABELS"); labels != "" {
 		cfg.Actions.RunnerLabels = splitCommaList(labels)
 	}
@@ -665,6 +713,9 @@ func serverTypeForClass(class string) string {
 }
 
 func serverTypeForProviderClass(provider, class string) string {
+	if isBlacksmithProvider(provider) {
+		return ""
+	}
 	if provider == "aws" {
 		return awsInstanceTypeCandidatesForClass(class)[0]
 	}

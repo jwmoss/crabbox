@@ -14,7 +14,7 @@ func (a App) warmup(ctx context.Context, args []string) error {
 	started := time.Now()
 	defaults := defaultConfig()
 	fs := newFlagSet("warmup", a.Stderr)
-	provider := fs.String("provider", defaults.Provider, "provider: hetzner or aws")
+	provider := fs.String("provider", defaults.Provider, "provider: hetzner, aws, or blacksmith-testbox")
 	profile := fs.String("profile", defaults.Profile, "profile")
 	class := fs.String("class", defaults.Class, "machine class")
 	serverType := fs.String("type", getenv("CRABBOX_SERVER_TYPE", ""), "provider server/instance type")
@@ -23,6 +23,7 @@ func (a App) warmup(ctx context.Context, args []string) error {
 	keep := fs.Bool("keep", true, "keep server after warmup")
 	actionsRunner := fs.Bool("actions-runner", false, "register this box as an ephemeral GitHub Actions runner")
 	reclaim := fs.Bool("reclaim", false, "claim this lease for the current repo")
+	blacksmithFlags := registerBlacksmithFlags(fs, defaults)
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -45,6 +46,7 @@ func (a App) warmup(ctx context.Context, args []string) error {
 	if flagWasSet(fs, "idle-timeout") {
 		cfg.IdleTimeout = *idleTimeout
 	}
+	applyBlacksmithFlagOverrides(&cfg, fs, blacksmithFlags)
 	if cfg.TTL <= 0 {
 		return exit(2, "ttl must be positive")
 	}
@@ -54,6 +56,12 @@ func (a App) warmup(ctx context.Context, args []string) error {
 	repo, err := findRepo()
 	if err != nil {
 		return err
+	}
+	if isBlacksmithProvider(cfg.Provider) {
+		if *actionsRunner {
+			return exit(2, "--actions-runner is not supported for provider=%s; Blacksmith owns runner hydration", cfg.Provider)
+		}
+		return a.blacksmithWarmup(ctx, cfg, repo, *keep, *reclaim)
 	}
 
 	coord, useCoordinator, err := newCoordinatorClient(cfg)
@@ -75,7 +83,7 @@ func (a App) warmup(ctx context.Context, args []string) error {
 		a.releaseAcquiredLeaseBestEffort(ctx, cfg, coord, useCoordinator, server, target, leaseID)
 		return err
 	}
-	fmt.Fprintf(a.Stdout, "leased %s slug=%s provider=%s server=%s type=%s ip=%s idle_timeout=%s expires=%s\n", leaseID, blank(serverSlug(server), "-"), cfg.Provider, server.DisplayID(), server.ServerType.Name, target.Host, cfg.IdleTimeout, blank(server.Labels["expires_at"], "-"))
+	fmt.Fprintf(a.Stdout, "leased %s slug=%s provider=%s server=%s type=%s ip=%s idle_timeout=%s expires=%s\n", leaseID, blank(serverSlug(server), "-"), cfg.Provider, server.DisplayID(), server.ServerType.Name, target.Host, cfg.IdleTimeout, blank(leaseLabelTimeDisplay(server.Labels["expires_at"]), server.Labels["expires_at"]))
 	fmt.Fprintf(a.Stdout, "ready ssh=%s@%s:%s workroot=%s\n", target.User, target.Host, target.Port, cfg.WorkRoot)
 	if *actionsRunner {
 		ghRepo, err := resolveGitHubRepo(repo, cfg.Actions.Repo)
@@ -93,7 +101,7 @@ func (a App) warmup(ctx context.Context, args []string) error {
 func (a App) runCommand(ctx context.Context, args []string) error {
 	defaults := defaultConfig()
 	fs := newFlagSet("run", a.Stderr)
-	provider := fs.String("provider", defaults.Provider, "provider: hetzner or aws")
+	provider := fs.String("provider", defaults.Provider, "provider: hetzner, aws, or blacksmith-testbox")
 	profile := fs.String("profile", defaults.Profile, "profile")
 	class := fs.String("class", defaults.Class, "machine class")
 	serverType := fs.String("type", getenv("CRABBOX_SERVER_TYPE", ""), "provider server/instance type")
@@ -109,6 +117,7 @@ func (a App) runCommand(ctx context.Context, args []string) error {
 	forceSyncLarge := fs.Bool("force-sync-large", false, "allow unusually large sync candidates")
 	junitResults := fs.String("junit", "", "comma-separated remote JUnit XML paths to record")
 	reclaim := fs.Bool("reclaim", false, "claim this lease for the current repo")
+	blacksmithFlags := registerBlacksmithFlags(fs, defaults)
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -145,6 +154,7 @@ func (a App) runCommand(ctx context.Context, args []string) error {
 	if *junitResults != "" {
 		cfg.Results.JUnit = splitCommaList(*junitResults)
 	}
+	applyBlacksmithFlagOverrides(&cfg, fs, blacksmithFlags)
 	if cfg.TTL <= 0 {
 		return exit(2, "ttl must be positive")
 	}
@@ -154,6 +164,18 @@ func (a App) runCommand(ctx context.Context, args []string) error {
 	repo, err := findRepo()
 	if err != nil {
 		return err
+	}
+	if isBlacksmithProvider(cfg.Provider) {
+		return a.blacksmithRun(ctx, cfg, repo, blacksmithRunOptions{
+			ID:          *leaseIDFlag,
+			Keep:        *keep,
+			Reclaim:     *reclaim,
+			SyncOnly:    *syncOnly,
+			Debug:       *debugSync,
+			ShellMode:   *shellMode,
+			Command:     command,
+			IdleTimeout: cfg.IdleTimeout,
+		})
 	}
 
 	var server Server
@@ -176,6 +198,13 @@ func (a App) runCommand(ctx context.Context, args []string) error {
 			}
 		} else {
 			server, target, leaseID, err = a.findLease(ctx, cfg, *leaseIDFlag)
+			if err == nil && !flagWasSet(fs, "idle-timeout") {
+				if duration, ok := parseDurationSecondsLabel(server.Labels["idle_timeout_secs"]); ok {
+					cfg.IdleTimeout = duration
+				} else if duration, ok := parseDurationSecondsLabel(server.Labels["idle_timeout"]); ok {
+					cfg.IdleTimeout = duration
+				}
+			}
 		}
 	} else {
 		if useCoordinator {
@@ -193,6 +222,9 @@ func (a App) runCommand(ctx context.Context, args []string) error {
 			a.releaseAcquiredLeaseBestEffort(ctx, cfg, coord, useCoordinator, server, target, leaseID)
 		}
 		return err
+	}
+	if !useCoordinator && leaseID != "" {
+		server = a.touchDirectLeaseBestEffort(ctx, cfg, server, blank(server.Labels["state"], "ready"))
 	}
 	if acquired {
 		defer func() {
@@ -229,26 +261,38 @@ func (a App) runCommand(ctx context.Context, args []string) error {
 	if !*noSync {
 		syncStart := time.Now()
 		fmt.Fprintf(a.Stderr, "syncing %s -> %s:%s\n", repo.Root, target.Host, workdir)
+		stepStart := time.Now()
 		if err := waitForSSHReady(ctx, &target, a.Stderr, "before sync", 2*time.Minute); err != nil {
 			return err
 		}
+		timings.syncSteps.sshReady = time.Since(stepStart)
+		stepStart = time.Now()
 		if err := runSSHQuiet(ctx, target, remoteMkdir(workdir)); err != nil {
 			return exit(7, "create remote workdir: %v", err)
 		}
+		timings.syncSteps.mkdir = time.Since(stepStart)
+		stepStart = time.Now()
 		manifest, err := syncManifest(repo.Root, configuredExcludes(cfg))
 		if err != nil {
 			return exit(6, "build sync file list: %v", err)
 		}
+		timings.syncSteps.manifest = time.Since(stepStart)
+		stepStart = time.Now()
 		if err := checkSyncPreflight(manifest, cfg, *forceSyncLarge, a.Stderr); err != nil {
 			return err
 		}
+		timings.syncSteps.preflight = time.Since(stepStart)
 		fingerprint := ""
 		if cfg.Sync.Fingerprint {
+			stepStart = time.Now()
 			fingerprint, err = syncFingerprintForManifest(repo, cfg, manifest)
+			timings.syncSteps.fingerprintLocal = time.Since(stepStart)
 			if err != nil {
 				fmt.Fprintf(a.Stderr, "warning: sync fingerprint failed: %v\n", err)
 			} else if fingerprint != "" {
+				stepStart = time.Now()
 				remoteFingerprint, err := runSSHOutput(ctx, target, remoteReadSyncFingerprint(workdir))
+				timings.syncSteps.fingerprintRemote = time.Since(stepStart)
 				if err == nil && remoteFingerprint == fingerprint {
 					timings.sync = time.Since(syncStart)
 					timings.syncSkipped = true
@@ -258,38 +302,54 @@ func (a App) runCommand(ctx context.Context, args []string) error {
 			}
 		}
 		if cfg.Sync.GitSeed {
+			stepStart = time.Now()
 			if err := runSSHQuiet(ctx, target, remoteGitSeed(workdir, repo.RemoteURL, repo.Head)); err != nil {
 				fmt.Fprintf(a.Stderr, "warning: remote git seed failed: %v\n", err)
 			}
+			timings.syncSteps.gitSeed = time.Since(stepStart)
 		}
 		manifestData := manifest.NUL()
+		stepStart = time.Now()
 		if err := runSSHInputQuiet(ctx, target, remoteWriteSyncManifestNew(workdir), string(manifestData)); err != nil {
 			return exit(7, "write sync manifest: %v", err)
 		}
 		if err := runSSHInputQuiet(ctx, target, remoteWriteSyncDeletedNew(workdir), string(manifest.DeletedNUL())); err != nil {
 			return exit(7, "write sync delete manifest: %v", err)
 		}
+		timings.syncSteps.manifestWrite = time.Since(stepStart)
 		if cfg.Sync.Delete {
+			stepStart = time.Now()
 			if err := runSSHQuiet(ctx, target, remotePruneSyncManifest(workdir)); err != nil {
 				return exit(6, "remote sync prune failed: %v", err)
 			}
+			timings.syncSteps.prune = time.Since(stepStart)
 		}
+		stepStart = time.Now()
 		if err := rsync(ctx, target, repo.Root, workdir, configuredExcludes(cfg), a.Stdout, a.Stderr, rsyncOptions{Debug: *debugSync, Delete: cfg.Sync.Delete, Checksum: cfg.Sync.Checksum, UseFilesFrom: true, FilesFrom: manifestData, Timeout: cfg.Sync.Timeout, HeartbeatInterval: 15 * time.Second}); err != nil {
 			return exit(6, "rsync failed: %v", err)
 		}
+		timings.syncSteps.rsync = time.Since(stepStart)
+		stepStart = time.Now()
 		if err := runSSHQuiet(ctx, target, remoteApplySyncManifest(workdir)); err != nil {
 			return exit(6, "remote sync manifest apply failed: %v", err)
 		}
+		timings.syncSteps.manifestApply = time.Since(stepStart)
+		stepStart = time.Now()
 		if err := runSSHQuiet(ctx, target, remoteSyncSanity(workdir, os.Getenv("CRABBOX_ALLOW_MASS_DELETIONS") == "1")); err != nil {
 			return exit(6, "remote sync sanity failed: %v", err)
 		}
+		timings.syncSteps.sanity = time.Since(stepStart)
+		stepStart = time.Now()
 		if err := runSSHQuiet(ctx, target, remoteGitHydrate(workdir, cfg.Sync.BaseRef)); err != nil {
 			fmt.Fprintf(a.Stderr, "warning: remote git hydrate failed: %v\n", err)
 		}
+		timings.syncSteps.gitHydrate = time.Since(stepStart)
 		if fingerprint != "" {
+			stepStart = time.Now()
 			if err := runSSHQuiet(ctx, target, remoteWriteSyncFingerprint(workdir, fingerprint)); err != nil {
 				fmt.Fprintf(a.Stderr, "warning: write sync fingerprint failed: %v\n", err)
 			}
+			timings.syncSteps.fingerprintWrite = time.Since(stepStart)
 		}
 		timings.sync = time.Since(syncStart)
 		fmt.Fprintf(a.Stderr, "sync complete in %s\n", timings.sync.Round(time.Millisecond))
@@ -305,9 +365,16 @@ afterSync:
 	if err := waitForSSHReady(ctx, &target, a.Stderr, "before command", 2*time.Minute); err != nil {
 		return err
 	}
+	if *noSync {
+		if err := runSSHQuiet(ctx, target, remoteMkdir(workdir)); err != nil {
+			return exit(7, "create remote workdir: %v", err)
+		}
+	}
 	if !useCoordinator {
-		setServerState(context.Background(), cfg, server, "running", a.Stderr)
-		defer setServerState(context.Background(), cfg, server, "ready", a.Stderr)
+		server = a.touchDirectLeaseBestEffort(context.Background(), cfg, server, "running")
+		defer func() {
+			server = a.touchDirectLeaseBestEffort(context.Background(), cfg, server, "ready")
+		}()
 	}
 	fmt.Fprintf(a.Stderr, "running on %s %s\n", target.Host, strings.Join(command, " "))
 	var runID string
@@ -356,17 +423,63 @@ type runTimings struct {
 	started     time.Time
 	sync        time.Duration
 	command     time.Duration
+	syncSteps   syncStepTimings
 	syncSkipped bool
 }
 
+type syncStepTimings struct {
+	sshReady          time.Duration
+	mkdir             time.Duration
+	manifest          time.Duration
+	preflight         time.Duration
+	fingerprintLocal  time.Duration
+	fingerprintRemote time.Duration
+	gitSeed           time.Duration
+	manifestWrite     time.Duration
+	prune             time.Duration
+	rsync             time.Duration
+	manifestApply     time.Duration
+	sanity            time.Duration
+	gitHydrate        time.Duration
+	fingerprintWrite  time.Duration
+}
+
 func formatRunSummary(timings runTimings, total time.Duration, exitCode int) string {
-	return fmt.Sprintf("run summary sync=%s command=%s total=%s sync_skipped=%t exit=%d",
+	summary := fmt.Sprintf("run summary sync=%s command=%s total=%s sync_skipped=%t exit=%d",
 		timings.sync.Round(time.Millisecond),
 		timings.command.Round(time.Millisecond),
 		total.Round(time.Millisecond),
 		timings.syncSkipped,
 		exitCode,
 	)
+	if breakdown := formatSyncStepTimings(timings.syncSteps); breakdown != "" {
+		summary += " sync_steps=" + breakdown
+	}
+	return summary
+}
+
+func formatSyncStepTimings(steps syncStepTimings) string {
+	parts := make([]string, 0, 14)
+	appendStep := func(name string, duration time.Duration) {
+		if duration > 0 {
+			parts = append(parts, fmt.Sprintf("%s:%s", name, duration.Round(time.Millisecond)))
+		}
+	}
+	appendStep("ssh", steps.sshReady)
+	appendStep("mkdir", steps.mkdir)
+	appendStep("manifest", steps.manifest)
+	appendStep("preflight", steps.preflight)
+	appendStep("fingerprint", steps.fingerprintLocal)
+	appendStep("fingerprint_remote", steps.fingerprintRemote)
+	appendStep("git_seed", steps.gitSeed)
+	appendStep("manifest_write", steps.manifestWrite)
+	appendStep("prune", steps.prune)
+	appendStep("rsync", steps.rsync)
+	appendStep("manifest_apply", steps.manifestApply)
+	appendStep("sanity", steps.sanity)
+	appendStep("git_hydrate", steps.gitHydrate)
+	appendStep("fingerprint_write", steps.fingerprintWrite)
+	return strings.Join(parts, ",")
 }
 
 func shouldUseShell(command []string) bool {
@@ -540,30 +653,55 @@ func heartbeatInterval(ttl time.Duration) time.Duration {
 	return interval
 }
 
-func setServerState(ctx context.Context, cfg Config, server Server, state string, stderr io.Writer) {
+func (a App) touchLeaseBestEffort(ctx context.Context, cfg Config, identifier, leaseID string) {
+	if _, ok, err := newCoordinatorClient(cfg); err == nil && ok {
+		if leaseID == "" {
+			leaseID = identifier
+		}
+		a.touchCoordinatorLeaseBestEffort(ctx, cfg, leaseID)
+		return
+	}
+	server, _, _, err := a.findLease(ctx, cfg, identifier)
+	if err != nil {
+		fmt.Fprintf(a.Stderr, "warning: direct touch failed for %s: %v\n", identifier, err)
+		return
+	}
+	a.touchDirectLeaseBestEffort(ctx, cfg, server, blank(server.Labels["state"], "ready"))
+}
+
+func (a App) touchActiveLeaseBestEffort(ctx context.Context, cfg Config, server Server, leaseID string) Server {
+	if _, ok, err := newCoordinatorClient(cfg); err == nil && ok {
+		a.touchCoordinatorLeaseBestEffort(ctx, cfg, leaseID)
+		return server
+	}
+	return a.touchDirectLeaseBestEffort(ctx, cfg, server, blank(server.Labels["state"], "ready"))
+}
+
+func (a App) touchDirectLeaseBestEffort(ctx context.Context, cfg Config, server Server, state string) Server {
 	if server.Labels == nil {
 		server.Labels = map[string]string{}
 	}
-	server.Labels["state"] = state
+	server.Labels = touchDirectLeaseLabels(server.Labels, cfg, state, time.Now().UTC())
 	if cfg.Provider == "aws" || server.Provider == "aws" || strings.HasPrefix(server.CloudID, "i-") {
 		client, err := newAWSClient(ctx, cfg)
 		if err != nil {
-			fmt.Fprintf(stderr, "warning: set server state=%s: %v\n", state, err)
-			return
+			fmt.Fprintf(a.Stderr, "warning: direct touch state=%s: %v\n", state, err)
+			return server
 		}
 		if err := client.SetTags(ctx, server.CloudID, server.Labels); err != nil {
-			fmt.Fprintf(stderr, "warning: set server state=%s: %v\n", state, err)
+			fmt.Fprintf(a.Stderr, "warning: direct touch state=%s: %v\n", state, err)
 		}
-		return
+		return server
 	}
 	client, err := newHetznerClient()
 	if err != nil {
-		fmt.Fprintf(stderr, "warning: set server state=%s: %v\n", state, err)
-		return
+		fmt.Fprintf(a.Stderr, "warning: direct touch state=%s: %v\n", state, err)
+		return server
 	}
 	if err := client.SetLabels(ctx, server.ID, server.Labels); err != nil {
-		fmt.Fprintf(stderr, "warning: set server state=%s: %v\n", state, err)
+		fmt.Fprintf(a.Stderr, "warning: direct touch state=%s: %v\n", state, err)
 	}
+	return server
 }
 
 func (a App) acquire(ctx context.Context, cfg Config, keep bool) (Server, SSHTarget, string, error) {
@@ -777,14 +915,17 @@ func (a App) findAWSLease(ctx context.Context, cfg Config, id string) (Server, S
 }
 
 func findServerByAlias(servers []Server, id string) (Server, string, error) {
-	for _, server := range servers {
-		if server.Labels["lease"] == id {
-			return server, server.Labels["lease"], nil
+	if isCanonicalLeaseID(id) {
+		for _, server := range servers {
+			if server.Labels["lease"] == id {
+				return server, server.Labels["lease"], nil
+			}
 		}
 	}
 	matches := make([]Server, 0, 2)
+	slug := normalizeLeaseSlug(id)
 	for _, server := range servers {
-		if serverSlug(server) == id {
+		if serverSlug(server) == slug {
 			matches = append(matches, server)
 		}
 	}
@@ -809,7 +950,7 @@ func findServerByAlias(servers []Server, id string) (Server, string, error) {
 
 func (a App) stop(ctx context.Context, args []string) error {
 	fs := newFlagSet("stop", a.Stderr)
-	provider := fs.String("provider", defaultConfig().Provider, "provider: hetzner or aws")
+	provider := fs.String("provider", defaultConfig().Provider, "provider: hetzner, aws, or blacksmith-testbox")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -821,6 +962,9 @@ func (a App) stop(ctx context.Context, args []string) error {
 		return err
 	}
 	cfg.Provider = *provider
+	if isBlacksmithProvider(cfg.Provider) {
+		return a.blacksmithStop(ctx, cfg, fs.Arg(0))
+	}
 	if coord, ok, err := newCoordinatorClient(cfg); err != nil {
 		return err
 	} else if ok {

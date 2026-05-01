@@ -18,7 +18,7 @@ On success, `actions hydrate` prints a concise total duration line.
 crabbox warmup --actions-runner
 crabbox actions hydrate --id blue-lobster
 crabbox actions register --id blue-lobster
-crabbox actions dispatch -f testbox_id=cbx_123
+crabbox actions dispatch -f testbox_id=cbx_abcdef123456
 crabbox run --id blue-lobster -- pnpm test
 ```
 

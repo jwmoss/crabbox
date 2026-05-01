@@ -48,31 +48,40 @@ leased machine
 
 ## Coordinator API
 
-MVP endpoints:
+Implemented endpoints:
 
 ```text
 GET  /v1/health
 GET  /v1/pool
+GET  /v1/whoami
 POST /v1/leases
 GET  /v1/leases
-GET  /v1/leases/{id}
-POST /v1/leases/{id}/heartbeat
-POST /v1/leases/{id}/release
+GET  /v1/leases/{id-or-slug}
+POST /v1/leases/{id-or-slug}/heartbeat
+POST /v1/leases/{id-or-slug}/release
+GET  /v1/runs
+POST /v1/runs
+GET  /v1/runs/{run-id}
+GET  /v1/runs/{run-id}/logs
+POST /v1/runs/{run-id}/finish
 GET  /v1/usage
+GET  /v1/admin/leases
+POST /v1/admin/leases/{id-or-slug}/release
+POST /v1/admin/leases/{id-or-slug}/delete
 ```
 
-Admin endpoints can be gated by GitHub team or explicit allowlist once GitHub IdP is active.
+Admin endpoints and `GET /v1/pool` require the shared operator token. GitHub browser-login tokens are user tokens for normal lease operations and are minted only after allowed GitHub org membership is verified. User-token list, exact-ID lookup, slug lookup, heartbeat, release, run history, logs, and usage are scoped to the token owner/org.
 
 ## Durable Object State
 
 Use one fleet Durable Object for MVP. It owns all atomic scheduling decisions.
 
-Core tables:
+Core stored records:
 
 ```sql
-machines(id, provider, provider_id, profile, class, state, address, ssh_user, labels_json, lease_id, created_at, updated_at, last_seen_at)
-leases(id, owner, org, profile, machine_id, state, command, repo, ttl_seconds, estimated_hourly_usd, max_estimated_usd, expires_at, created_at, updated_at, released_at)
-events(id, lease_id, machine_id, type, actor, message, payload_json, created_at)
+leases(id, slug, provider, cloud_id, region, owner, org, profile, class, server_type, server_id, server_name, provider_key, host, ssh_user, ssh_port, work_root, keep, ttl_seconds, idle_timeout_seconds, estimated_hourly_usd, max_estimated_usd, state, created_at, updated_at, last_touched_at, expires_at, released_at, ended_at)
+runs(id, lease_id, slug, owner, org, provider, class, server_type, command_json, state, exit_code, sync_ms, command_ms, duration_ms, log_bytes, log_truncated, results_json, started_at, ended_at)
+runlog(run_id, bounded_stdout_stderr_tail)
 ```
 
 State transitions:
@@ -108,14 +117,13 @@ Bootstrap should produce machines with:
 
 - `crabbox` user.
 - SSH key-only auth.
-- Docker.
 - Git.
-- Node 24.
-- pnpm.
-- build-essential.
 - rsync.
+- curl.
+- jq.
 - writable `/work/crabbox`.
-- cleanup service or boot-time cleanup script.
+
+Language runtimes, Docker, services, dependencies, and secrets are project setup, not Crabbox base bootstrap. Use GitHub Actions hydration, devcontainers, Nix, mise/asdf, or repository scripts for that layer.
 
 Prefer snapshots/images once bootstrap is proven. Cloud-init is acceptable for first pass.
 

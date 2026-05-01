@@ -1,7 +1,9 @@
+import { isAdminRequest } from "./auth";
 import { EC2SpotClient } from "./aws";
-import { leaseConfig } from "./config";
+import { leaseConfig, validCIDRs } from "./config";
 import { HetznerClient } from "./hetzner";
 import { errorMessage, json, pathParts, readJson, requestOwner } from "./http";
+import { githubAuthRoute } from "./oauth";
 import { leaseSlugFromID, normalizeLeaseSlug, slugWithCollisionSuffix } from "./slug";
 import type {
   Env,
@@ -23,6 +25,7 @@ export class FleetDurableObject implements DurableObject {
   constructor(
     private readonly state: DurableObjectState,
     private readonly env: Env,
+    private readonly testProviders: Partial<Record<Provider, CloudProvider>> = {},
   ) {}
 
   async fetch(request: Request): Promise<Response> {
@@ -32,7 +35,13 @@ export class FleetDurableObject implements DurableObject {
       if (method === "GET" && parts.join("/") === "v1/health") {
         return json({ ok: true, fleet: fleetID });
       }
+      if (parts[0] === "v1" && parts[1] === "auth" && parts[2] === "github") {
+        return await githubAuthRoute(request, parts[3], this.state.storage, this.env);
+      }
       if (method === "GET" && parts.join("/") === "v1/pool") {
+        if (!isAdminRequest(request)) {
+          return json({ error: "forbidden", message: "admin token required" }, { status: 403 });
+        }
         return await this.pool(request);
       }
       if (method === "GET" && parts.join("/") === "v1/usage") {
@@ -42,9 +51,15 @@ export class FleetDurableObject implements DurableObject {
         return this.whoami(request);
       }
       if (method === "GET" && parts.join("/") === "v1/admin/leases") {
+        if (!isAdminRequest(request)) {
+          return json({ error: "forbidden", message: "admin token required" }, { status: 403 });
+        }
         return await this.adminLeases(request);
       }
       if (parts[0] === "v1" && parts[1] === "admin" && parts[2] === "leases" && parts[3]) {
+        if (!isAdminRequest(request)) {
+          return json({ error: "forbidden", message: "admin token required" }, { status: 403 });
+        }
         return await this.adminLeaseRoute(request, parts[3], parts[4]);
       }
       if (method === "GET" && parts.join("/") === "v1/runs") {
@@ -57,7 +72,7 @@ export class FleetDurableObject implements DurableObject {
         return await this.runRoute(request, parts[2], parts[3]);
       }
       if (method === "GET" && parts.join("/") === "v1/leases") {
-        return await this.listLeases();
+        return await this.listLeases(request);
       }
       if (method === "POST" && parts.join("/") === "v1/leases") {
         return await this.createLease(request);
@@ -81,6 +96,9 @@ export class FleetDurableObject implements DurableObject {
     const org = requestOrg(request, this.env);
     const input = await readJson<LeaseRequest>(request);
     const config = leaseConfig(input);
+    if (config.provider === "aws" && config.awsSSHCIDRs.length === 0) {
+      config.awsSSHCIDRs = requestSourceCIDRs(request);
+    }
     const leaseID = validLeaseID(input.leaseID) ? input.leaseID : newLeaseID();
     const leases = await this.leaseRecords();
     const slug = allocateLeaseSlug(
@@ -174,10 +192,13 @@ export class FleetDurableObject implements DurableObject {
     const method = request.method.toUpperCase();
     if (method === "GET" && action === undefined) {
       const lease = await this.resolveLease(leaseID, request, false);
-      return lease ? json({ lease }) : json({ error: "not_found" }, { status: 404 });
+      return lease ? json({ lease }) : notFound();
     }
     if (method === "POST" && action === "heartbeat") {
-      const lease = await this.requireLease(leaseID, request, false);
+      const lease = await this.resolveLease(leaseID, request, false);
+      if (!lease) {
+        return notFound();
+      }
       const body = await optionalJson<{ idleTimeoutSeconds?: number }>(request);
       const now = new Date();
       const requestedIdleTimeoutSeconds = body.idleTimeoutSeconds;
@@ -202,7 +223,10 @@ export class FleetDurableObject implements DurableObject {
   }
 
   private async releaseLease(request: Request, leaseID: string, admin: boolean): Promise<Response> {
-    const lease = await this.requireLease(leaseID, request, admin);
+    const lease = await this.resolveLease(leaseID, request, admin);
+    if (!lease) {
+      return notFound();
+    }
     const body = await optionalJson<{ delete?: boolean }>(request);
     const shouldDelete = body.delete ?? !lease.keep;
     if (shouldDelete && lease.state === "active") {
@@ -221,7 +245,7 @@ export class FleetDurableObject implements DurableObject {
     return json({
       owner: requestOwner(request),
       org: requestOrg(request, this.env),
-      auth: "bearer",
+      auth: request.headers.get("x-crabbox-auth") || "bearer",
     });
   }
 
@@ -242,8 +266,11 @@ export class FleetDurableObject implements DurableObject {
     return json({ machines });
   }
 
-  private async listLeases(): Promise<Response> {
-    return json({ leases: await this.leaseRecords() });
+  private async listLeases(request: Request): Promise<Response> {
+    const leases = isAdminRequest(request)
+      ? this.filterLeases(await this.leaseRecords(), request)
+      : this.filterLeasesForRequest(await this.leaseRecords(), request);
+    return json({ leases });
   }
 
   private async adminLeases(request: Request): Promise<Response> {
@@ -268,7 +295,10 @@ export class FleetDurableObject implements DurableObject {
   }
 
   private async adminDeleteLease(request: Request, leaseID: string): Promise<Response> {
-    const lease = await this.requireLease(leaseID, request, true);
+    const lease = await this.resolveLease(leaseID, request, true);
+    if (!lease) {
+      return notFound();
+    }
     if (lease.state === "active") {
       await this.deleteLeaseServer(lease);
     }
@@ -304,6 +334,9 @@ export class FleetDurableObject implements DurableObject {
       return json({ error: "invalid_lease_id" }, { status: 400 });
     }
     const lease = await this.getLease(input.leaseID);
+    if (lease && !this.leaseVisibleToRequest(lease, request, false)) {
+      return json({ error: "not_found" }, { status: 404 });
+    }
     const now = new Date().toISOString();
     const run: RunRecord = {
       id: newRunID(),
@@ -330,12 +363,12 @@ export class FleetDurableObject implements DurableObject {
     const method = request.method.toUpperCase();
     if (method === "GET" && action === undefined) {
       const run = await this.getRun(runID);
-      return run ? json({ run }) : json({ error: "not_found" }, { status: 404 });
+      return run && this.runVisibleToRequest(run, request) ? json({ run }) : notFound();
     }
     if (method === "GET" && action === "logs") {
       const run = await this.getRun(runID);
-      if (!run) {
-        return json({ error: "not_found" }, { status: 404 });
+      if (!run || !this.runVisibleToRequest(run, request)) {
+        return notFound();
       }
       const log = (await this.state.storage.get<string>(runLogKey(runID))) ?? "";
       return new Response(log, {
@@ -349,7 +382,10 @@ export class FleetDurableObject implements DurableObject {
   }
 
   private async finishRun(request: Request, runID: string): Promise<Response> {
-    const run = await this.requireRun(runID);
+    const run = await this.getRun(runID);
+    if (!run || !this.runVisibleToRequest(run, request)) {
+      return notFound();
+    }
     const input = await readJson<RunFinishRequest>(request);
     const now = new Date();
     const started = Date.parse(run.startedAt);
@@ -385,12 +421,15 @@ export class FleetDurableObject implements DurableObject {
     const org = url.searchParams.get("org") ?? "";
     const state = url.searchParams.get("state") ?? "";
     const limit = clampLimit(url.searchParams.get("limit"), 50);
+    const admin = isAdminRequest(request);
     const runs = await this.runRecords();
+    const scopedOwner = admin ? owner : requestOwner(request);
+    const scopedOrg = admin ? org : requestOrg(request, this.env);
     return json({
       runs: runs
         .filter((run) => !leaseID || run.leaseID === leaseID)
-        .filter((run) => !owner || run.owner === owner)
-        .filter((run) => !org || run.org === org)
+        .filter((run) => !scopedOwner || run.owner === scopedOwner)
+        .filter((run) => !scopedOrg || run.org === scopedOrg)
         .filter((run) => !state || run.state === state)
         .toSorted((a, b) => b.startedAt.localeCompare(a.startedAt))
         .slice(0, limit),
@@ -400,13 +439,18 @@ export class FleetDurableObject implements DurableObject {
   private async usage(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const requestedScope = url.searchParams.get("scope") ?? "user";
+    const admin = isAdminRequest(request);
     const scope =
-      requestedScope === "org" || requestedScope === "all" || requestedScope === "user"
+      admin && (requestedScope === "org" || requestedScope === "all" || requestedScope === "user")
         ? requestedScope
         : "user";
     const month = url.searchParams.get("month") ?? new Date().toISOString().slice(0, 7);
-    const owner = url.searchParams.get("owner") ?? requestOwner(request);
-    const org = url.searchParams.get("org") ?? requestOrg(request, this.env);
+    const owner = admin
+      ? (url.searchParams.get("owner") ?? requestOwner(request))
+      : requestOwner(request);
+    const org = admin
+      ? (url.searchParams.get("org") ?? requestOrg(request, this.env))
+      : requestOrg(request, this.env);
     const usage = usageSummary(await this.leaseRecords(), { scope, owner, org, month }, new Date());
     return json({ usage, limits: costLimits(this.env) });
   }
@@ -453,7 +497,7 @@ export class FleetDurableObject implements DurableObject {
   ): Promise<LeaseRecord | undefined> {
     const exact = await this.getLease(identifier);
     if (exact) {
-      return exact;
+      return this.leaseVisibleToRequest(exact, request, admin) ? exact : undefined;
     }
     const slug = normalizeLeaseSlug(identifier);
     if (!slug) {
@@ -489,18 +533,26 @@ export class FleetDurableObject implements DurableObject {
     return [...runs.values()];
   }
 
-  private async requireLease(
-    leaseID: string,
-    request?: Request,
-    admin = false,
-  ): Promise<LeaseRecord> {
-    const lease = request
-      ? await this.resolveLease(leaseID, request, admin)
-      : await this.getLease(leaseID);
-    if (!lease) {
-      throw new Error(`lease not found: ${leaseID}`);
-    }
-    return lease;
+  private filterLeasesForRequest(leases: LeaseRecord[], request: Request): LeaseRecord[] {
+    const owner = requestOwner(request);
+    const org = requestOrg(request, this.env);
+    return this.filterLeases(leases, request).filter(
+      (lease) => lease.owner === owner && lease.org === org,
+    );
+  }
+
+  private leaseVisibleToRequest(lease: LeaseRecord, request: Request, admin: boolean): boolean {
+    return (
+      admin ||
+      (lease.owner === requestOwner(request) && lease.org === requestOrg(request, this.env))
+    );
+  }
+
+  private runVisibleToRequest(run: RunRecord, request: Request): boolean {
+    return (
+      isAdminRequest(request) ||
+      (run.owner === requestOwner(request) && run.org === requestOrg(request, this.env))
+    );
   }
 
   private async putLease(lease: LeaseRecord): Promise<void> {
@@ -511,19 +563,15 @@ export class FleetDurableObject implements DurableObject {
     return this.state.storage.get<RunRecord>(runKey(runID));
   }
 
-  private async requireRun(runID: string): Promise<RunRecord> {
-    const run = await this.getRun(runID);
-    if (!run) {
-      throw new Error(`run not found: ${runID}`);
-    }
-    return run;
-  }
-
   private async putRun(run: RunRecord): Promise<void> {
     await this.state.storage.put(runKey(run.id), run);
   }
 
   private provider(provider: Provider, region = "eu-west-1"): CloudProvider {
+    const testProvider = this.testProviders[provider];
+    if (testProvider) {
+      return testProvider;
+    }
     if (provider === "aws") {
       return new AWSProvider(this.env, region || this.env.CRABBOX_AWS_REGION || "eu-west-1");
     }
@@ -583,6 +631,19 @@ function clampLimit(value: string | null, fallback: number): number {
     return fallback;
   }
   return Math.min(Math.trunc(parsed), 500);
+}
+
+function notFound(): Response {
+  return json({ error: "not_found" }, { status: 404 });
+}
+
+function requestSourceCIDRs(request: Request): string[] {
+  const sourceIP = request.headers.get("cf-connecting-ip") ?? "";
+  if (!sourceIP) {
+    return [];
+  }
+  const cidr = sourceIP.includes(":") ? `${sourceIP}/128` : `${sourceIP}/32`;
+  return validCIDRs([cidr]);
 }
 
 function finiteNumber(value: number | undefined): number | undefined {

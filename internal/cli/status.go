@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 )
 
 func (a App) status(ctx context.Context, args []string) error {
 	fs := newFlagSet("status", a.Stderr)
-	provider := fs.String("provider", defaultConfig().Provider, "provider: hetzner or aws")
+	provider := fs.String("provider", defaultConfig().Provider, "provider: hetzner, aws, or blacksmith-testbox")
 	id := fs.String("id", "", "lease id or slug")
 	wait := fs.Bool("wait", false, "wait until ready")
 	waitTimeout := fs.Duration("wait-timeout", 5*time.Minute, "maximum wait duration")
@@ -29,6 +28,9 @@ func (a App) status(ctx context.Context, args []string) error {
 		return err
 	}
 	cfg.Provider = *provider
+	if isBlacksmithProvider(cfg.Provider) {
+		return a.blacksmithStatus(ctx, cfg, *id, *wait, *waitTimeout, *jsonOut)
+	}
 	deadline := time.Now().Add(*waitTimeout)
 	for {
 		state, err := a.leaseStatus(ctx, cfg, *id)
@@ -36,7 +38,7 @@ func (a App) status(ctx context.Context, args []string) error {
 			return err
 		}
 		if *wait {
-			a.touchCoordinatorLeaseBestEffort(ctx, cfg, state.ID)
+			a.touchLeaseBestEffort(ctx, cfg, *id, state.ID)
 		}
 		if *jsonOut {
 			if !*wait || state.Ready {
@@ -117,10 +119,10 @@ func (a App) leaseStatus(ctx context.Context, cfg Config, id string) (statusView
 		SSHUser:       target.User,
 		SSHPort:       target.Port,
 		SSHKey:        target.Key,
-		LastTouchedAt: server.Labels["last_touched_at"],
+		LastTouchedAt: blank(leaseLabelTimeDisplay(server.Labels["last_touched_at"]), server.Labels["last_touched_at"]),
 		IdleFor:       idleForString(server.Labels["last_touched_at"], time.Now()),
-		IdleTimeout:   blank(server.Labels["idle_timeout"], formatSecondsDurationString(server.Labels["idle_timeout_secs"])),
-		ExpiresAt:     server.Labels["expires_at"],
+		IdleTimeout:   leaseLabelDurationDisplay(server.Labels["idle_timeout_secs"], server.Labels["idle_timeout"]),
+		ExpiresAt:     blank(leaseLabelTimeDisplay(server.Labels["expires_at"]), server.Labels["expires_at"]),
 		Labels:        server.Labels,
 		Ready:         server.PublicNet.IPv4.IP != "" && server.Labels["state"] != "provisioning",
 	}, nil
@@ -144,11 +146,8 @@ func idleForString(value string, now time.Time) string {
 	if value == "" {
 		return ""
 	}
-	touched, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		touched, err = time.Parse(time.RFC3339Nano, value)
-	}
-	if err != nil || touched.After(now) {
+	touched, ok := parseLeaseLabelTime(value)
+	if !ok || touched.After(now) {
 		return ""
 	}
 	return now.Sub(touched).Round(time.Second).String()
@@ -162,9 +161,9 @@ func formatSecondsDuration(seconds int) string {
 }
 
 func formatSecondsDurationString(value string) string {
-	seconds, err := strconv.Atoi(value)
-	if err != nil {
+	duration, ok := parseDurationSecondsLabel(value)
+	if !ok {
 		return ""
 	}
-	return formatSecondsDuration(seconds)
+	return duration.String()
 }

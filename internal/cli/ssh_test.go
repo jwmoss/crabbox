@@ -88,7 +88,7 @@ func TestSSHArgsIncludeReliabilityOptions(t *testing.T) {
 	got := strings.Join(sshArgs(SSHTarget{
 		User: "crabbox",
 		Host: "203.0.113.10",
-		Key:  "/tmp/key",
+		Key:  "/tmp/crabbox-lease/id_ed25519",
 		Port: "2222",
 	}, "true"), "\n")
 	for _, want := range []string{
@@ -96,7 +96,11 @@ func TestSSHArgsIncludeReliabilityOptions(t *testing.T) {
 		"ConnectionAttempts=3",
 		"ServerAliveInterval=15",
 		"ServerAliveCountMax=2",
-		"UserKnownHostsFile=/tmp/crabbox-home/.ssh/known_hosts",
+		"ControlMaster=auto",
+		"ControlPersist=60s",
+		"ControlPath=",
+		"crabbox-ssh-%C",
+		"UserKnownHostsFile=/tmp/crabbox-lease/known_hosts",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("sshArgs() missing %q in %q", want, got)

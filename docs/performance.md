@@ -54,7 +54,7 @@ git diff --name-only origin/main...
 
 ## Package And Tool Caches
 
-Runner bootstrap prepares shared package cache locations for Node, pnpm, Docker, Git, and build tools. These caches are best-effort speedups and must not be treated as source of truth.
+Runner bootstrap prepares shared cache directories, but does not install project runtimes. Package-manager and Docker caches are best-effort speedups once the repository setup installs those tools; they must not be treated as source of truth.
 
 Use explicit cache commands on kept leases:
 

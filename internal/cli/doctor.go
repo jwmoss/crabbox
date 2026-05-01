@@ -36,7 +36,7 @@ func (a App) doctor(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		out, err := runSSHOutput(ctx, target, "printf 'node='; node -v; printf 'pnpm='; pnpm --version; printf 'corepack='; corepack --version; printf 'git='; git --version; printf 'rsync='; rsync --version | head -1; printf 'docker='; docker --version")
+		out, err := runSSHOutput(ctx, target, "printf 'git='; git --version; printf 'rsync='; rsync --version | head -1; printf 'curl='; curl --version | head -1; printf 'jq='; jq --version")
 		if err != nil {
 			return exit(7, "remote doctor failed for %s: %v", *id, err)
 		}

@@ -113,19 +113,38 @@ func runSSHStream(ctx context.Context, target SSHTarget, remote string, stdout, 
 }
 
 func sshArgs(target SSHTarget, remote string) []string {
+	return append(sshBaseArgs(target),
+		target.User+"@"+target.Host,
+		remote,
+	)
+}
+
+func sshBaseArgs(target SSHTarget) []string {
 	return []string{
 		"-i", target.Key,
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=accept-new",
-		"-o", "UserKnownHostsFile=" + filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts"),
+		"-o", "UserKnownHostsFile=" + knownHostsFile(target),
 		"-o", "ConnectTimeout=10",
 		"-o", "ConnectionAttempts=3",
 		"-o", "ServerAliveInterval=15",
 		"-o", "ServerAliveCountMax=2",
+		"-o", "ControlMaster=auto",
+		"-o", "ControlPersist=60s",
+		"-o", "ControlPath=" + sshControlPath(),
 		"-p", target.Port,
-		target.User + "@" + target.Host,
-		remote,
 	}
+}
+
+func knownHostsFile(target SSHTarget) string {
+	if target.Key != "" {
+		return filepath.Join(filepath.Dir(target.Key), "known_hosts")
+	}
+	return filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts")
+}
+
+func sshControlPath() string {
+	return filepath.Join("/tmp", "crabbox-ssh-%C")
 }
 
 type rsyncOptions struct {
@@ -146,18 +165,7 @@ func rsync(ctx context.Context, target SSHTarget, src, dst string, excludes []st
 	}
 	args := []string{
 		"-az",
-		"-e", strings.Join([]string{
-			"ssh",
-			"-i", shellQuote(target.Key),
-			"-o", "BatchMode=yes",
-			"-o", "StrictHostKeyChecking=accept-new",
-			"-o", "UserKnownHostsFile=" + shellQuote(filepath.Join(os.Getenv("HOME"), ".ssh", "known_hosts")),
-			"-o", "ConnectTimeout=10",
-			"-o", "ConnectionAttempts=3",
-			"-o", "ServerAliveInterval=15",
-			"-o", "ServerAliveCountMax=2",
-			"-p", shellQuote(target.Port),
-		}, " "),
+		"-e", strings.Join(shellWords(append([]string{"ssh"}, sshBaseArgs(target)...)), " "),
 	}
 	if opts.Delete && !opts.UseFilesFrom {
 		args = append(args, "--delete")

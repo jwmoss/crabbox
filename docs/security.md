@@ -13,15 +13,16 @@ Assumptions:
 
 ## Authentication
 
-Cloudflare Access protects the coordinator.
+Cloudflare Access can protect custom coordinator routes. The Worker also enforces auth for every non-health route.
 
 MVP:
 
 - One-time PIN Access remains available for early fallback.
 - GitHub Access IdP is configured for the `openclaw` org.
-- Coordinator validates `Cf-Access-Jwt-Assertion`.
-- Coordinator maps Access identity to lease owner.
-- Workers.dev automation currently uses a shared bearer token. `crabbox login` stores and verifies that token; browser-based Cloudflare Access/GitHub OAuth and split user/admin tokens are still future hardening.
+- `crabbox login` opens GitHub, receives a signed user token from the coordinator, and stores it in local config.
+- Workers.dev automation can still use a shared bearer token via `crabbox login --token-stdin`.
+- The CLI sends owner/org headers only for shared-token automation; GitHub login tokens carry owner/org inside the signed token.
+- GitHub browser-login tokens are user tokens, not admin tokens. They can only see and mutate leases, runs, logs, and usage for their own owner/org identity.
 - Missing shared-token config fails closed for non-health coordinator routes.
 
 Target:
@@ -34,9 +35,9 @@ Target:
 Roles:
 
 ```text
-user: acquire, heartbeat, release own leases, list own leases
+user: acquire, heartbeat, release own leases, list own leases/runs/logs/usage
 maintainer: shared warm pool access
-admin: drain machines, cleanup, view all leases, deploy
+admin: drain machines, cleanup, view all leases/runs/pool/usage, deploy
 ```
 
 Until GitHub teams are wired, admin identity can be an explicit allowlist in Worker config.
@@ -53,7 +54,8 @@ Rules:
 - Never accept secret values as command-line flag values.
 - Never log env values.
 - Redact known secret-looking strings in diagnostics.
-- `CRABBOX_SHARED_TOKEN` is stored as a Worker secret; local clients use `CRABBOX_COORDINATOR_TOKEN`.
+- `CRABBOX_SHARED_TOKEN` is stored as a Worker secret for trusted operator automation; local automation can use `CRABBOX_COORDINATOR_TOKEN`.
+- `CRABBOX_GITHUB_CLIENT_ID`, `CRABBOX_GITHUB_CLIENT_SECRET`, and `CRABBOX_SESSION_SECRET` are Worker secrets for browser login.
 
 Project allowlist example:
 
@@ -69,7 +71,9 @@ Project allowlist example:
 
 MVP SSH posture:
 
-- Public SSH allowed only for worker machines.
+- SSH allowed only for worker machines.
+- AWS broker-created security groups use `CRABBOX_AWS_SSH_CIDRS` when configured, otherwise the Cloudflare request source IP for the lease request.
+- Hetzner direct mode still relies on provider networking/firewall defaults unless a profile supplies tighter controls.
 - Key-only authentication.
 - Dedicated `crabbox` user.
 - No password login.
@@ -125,14 +129,16 @@ Store only operational metadata:
 
 Do not store:
 
-- stdout/stderr logs in the coordinator for MVP.
-- env values.
-- file contents.
+- unbounded stdout/stderr logs in the coordinator;
+- env values;
+- file contents;
 - SSH keys.
 
-## Audit Trail
+Coordinator run records keep bounded stdout/stderr tails and optional structured JUnit summaries for debugging.
 
-Durable Object events should record:
+## Future Audit Trail
+
+Durable Object run and lease records already provide operational history. A fuller event audit trail should record:
 
 ```text
 lease.created

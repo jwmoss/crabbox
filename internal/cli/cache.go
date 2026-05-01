@@ -153,7 +153,7 @@ func (a App) cacheTarget(ctx context.Context, id string, reclaim bool) (SSHTarge
 		if claimErr := claimLeaseForRepo(leaseID, serverSlug(server), repo.Root, cfg.IdleTimeout, reclaim); claimErr != nil {
 			return SSHTarget{}, Config{}, "", claimErr
 		}
-		a.touchCoordinatorLeaseBestEffort(ctx, cfg, leaseID)
+		a.touchActiveLeaseBestEffort(ctx, cfg, server, leaseID)
 	}
 	return target, cfg, leaseID, err
 }

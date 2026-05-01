@@ -1,5 +1,7 @@
 # MVP Plan
 
+This is the historical MVP design record. For current implementation ownership, use [Source Map](source-map.md); for user-facing behavior, use [How Crabbox Works](how-it-works.md), [CLI](cli.md), and [Features](features/README.md).
+
 ## Goal
 
 Build Crabbox as a Go CLI plus Cloudflare coordinator that lets trusted OpenClaw maintainers run local worktrees on shared remote machines with a fast local-agent loop:
@@ -24,8 +26,8 @@ Primary agent loop:
 
 ```sh
 crabbox warmup --profile openclaw-check
-crabbox run --id cbx_123 -- pnpm check:changed
-crabbox stop cbx_123
+crabbox run --id cbx_abcdef123456 -- pnpm check:changed
+crabbox stop cbx_abcdef123456
 ```
 
 Expected user experience:
@@ -55,12 +57,11 @@ Crabbox MVP runs commands over SSH on owned cloud capacity. Actions-backed hydra
 
 ## Repositories
 
-Use two repos:
+Current implementation lives in one repo:
 
-- `openclaw/crabbox`: Go CLI, Worker coordinator, docs, deploy scripts.
-- `openclaw/crabbox-fleet`: desired fleet config only.
+- `openclaw/crabbox`: Go CLI, Worker coordinator, docs, release/deploy scripts, and the OpenClaw plugin package.
 
-The fleet repo is not a lock database. It stores profiles, machine classes, default TTLs, sync excludes, and backend declarations. Live lease state belongs in Cloudflare Durable Objects.
+A separate desired-state fleet repo can still exist later, but it is not part of the current 0.1.0 implementation. Live lease state belongs in Cloudflare Durable Objects.
 
 ## MVP Components
 
@@ -77,19 +78,19 @@ Build in this order:
    - Flags override env.
    - Env overrides repo-local `crabbox.yaml`.
    - Repo-local config overrides user config.
-   - User config overrides shared fleet config.
-   - Shared fleet config can be fetched from GitHub raw content or local checkout.
+   - Defaults fill anything unset.
 
 3. Coordinator API
-   - Cloudflare Worker validates Cloudflare Access JWT.
+   - Cloudflare Worker validates shared bearer-token auth for non-health routes.
+   - Cloudflare Access can protect custom routes in front of the Worker.
    - Durable Object owns lease state and atomic machine selection.
-   - Worker calls Hetzner API for create/delete/status.
+   - Worker calls Hetzner and AWS APIs for create/delete/status.
    - Worker exposes JSON API under `/v1`.
 
 4. Lease lifecycle
    - `POST /v1/leases` acquires or provisions.
-   - `POST /v1/leases/{id}/heartbeat` keeps lease alive.
-   - `POST /v1/leases/{id}/release` releases or deletes.
+   - `POST /v1/leases/{id-or-slug}/heartbeat` keeps lease alive.
+   - `POST /v1/leases/{id-or-slug}/release` releases or deletes.
    - Durable Object alarm reaps expired leases.
    - Machines have states: `idle`, `leased`, `draining`, `provisioning`, `failed`.
 
@@ -112,13 +113,13 @@ Build in this order:
 7. Hetzner backend
    - Create machines from configured image.
    - Attach configured SSH key.
-   - Apply labels: `crabbox=true`, `profile=...`, `lease=...`, `owner=...`.
+   - Apply labels: `crabbox=true`, `profile=...`, `lease=...`, `slug=...`, `owner=...`, `last_touched_at=...`, `idle_timeout_secs=...`, `ttl_secs=...`, `expires_at=...`.
    - Support warm static pool and ephemeral overflow.
    - Implement cleanup for stale ephemeral machines.
 
 8. OpenClaw profile
    - `openclaw-check` profile.
-   - Linux x64, Docker, Node 24, pnpm, Git.
+   - Linux x64 with Crabbox bootstrap plumbing only; Docker, Node 24, pnpm, and other project runtimes come from repo-owned setup or Actions hydration.
    - Default TTL: 90 minutes.
    - Default machine class configurable, likely `ccx33` first.
    - Env allowlist: `OPENCLAW_*`, `NODE_OPTIONS`, common model/provider keys only when explicitly configured locally.
@@ -155,7 +156,7 @@ And proves:
 - Remote command output streams.
 - The local exit code matches the remote command exit code.
 - Lease is released on success/failure.
-- Expired leases are cleaned by TTL.
+- Expired leases are cleaned by idle timeout and TTL cap.
 - Machine pool state is visible through `crabbox pool`.
 
 ## Non-Goals For MVP
@@ -174,18 +175,18 @@ And proves:
 - The Cloudflare coordinator and Durable Object lease store are implemented and deployed. The CLI uses them when `CRABBOX_COORDINATOR` is set, and falls back to direct Hetzner otherwise.
 - Intended primary domain: `crabbox.openclaw.ai`.
 - Current Cloudflare-manageable fallback domain: `crabbox.clawd.bot`.
-- `openclaw.ai` is currently not visible as a Cloudflare zone in the available account; DNS is on Namecheap nameservers.
+- `openclaw.ai` must be visible as a Cloudflare zone before `crabbox.openclaw.ai/*` can be attached as a Worker route. Current public DNS is on Namecheap nameservers.
 - Cloudflare account ID and Crabbox Cloudflare token are available in local and MacBook Pro `~/.profile`.
 - The current Crabbox Cloudflare token is `crabbox-deploy`, scoped to `Steipete@gmail.com's Account` and the `clawd.bot` zone.
 - The current Crabbox Cloudflare token verifies Workers scripts, Access apps, Access IdPs, Access keys, DNS records, and zone Worker routes.
 - Cloudflare Access is enabled.
 - Current Access IdPs are OTP and GitHub.
-- GitHub OAuth app `Crabbox Access` exists under the `openclaw` org.
-- GitHub OAuth client ID and secret are present in local and MacBook Pro `~/.profile`.
+- GitHub OAuth app `Crabbox Access` exists under the `openclaw` org for Cloudflare Access.
+- Crabbox browser login uses a GitHub OAuth callback at `/v1/auth/github/callback` and stores OAuth client values as Worker secrets.
 - Cloudflare Access GitHub IdP `GitHub OpenClaw` exists.
 - Cloudflare Access app `Crabbox Coordinator` exists for `crabbox.clawd.bot`.
-- Worker `crabbox-coordinator` is deployed at `https://crabbox-coordinator.steipete.workers.dev` and routed from `crabbox.clawd.bot/*`.
-- Coordinator bearer auth uses `CRABBOX_COORDINATOR_TOKEN` locally and `CRABBOX_SHARED_TOKEN` in the Worker.
+- Worker `crabbox-coordinator` is deployed at `https://crabbox-coordinator.steipete.workers.dev` and routed from `crabbox.clawd.bot/*`. The canonical target is `https://crabbox.openclaw.ai` once the Cloudflare zone is delegated.
+- Coordinator auth supports GitHub browser-login user tokens plus shared-token operator automation. Shared-token auth uses `CRABBOX_COORDINATOR_TOKEN` locally and `CRABBOX_SHARED_TOKEN` in the Worker.
 - Hetzner token is available in local and Mac Studio `~/.profile`.
 - The Hetzner account currently hits a dedicated-core quota/resource limit for `ccx63`, `ccx53`, and `ccx43`. The `beast` class falls back to `cpx62` until quota is raised.
 - Public SSH on port 22 was not usable from the tested network path; cloud-init opens SSH on port 2222 and the CLI uses that by default.
@@ -196,9 +197,9 @@ And proves:
 ## Next Implementation Milestones
 
 1. Raise Hetzner dedicated-core quota so `beast` can use `ccx63` instead of falling back to `cpx62`.
-2. Replace shared-token login with Cloudflare Access/GitHub OAuth user tokens.
-3. Add Cloudflare Access service-token support for non-browser CLI use on `crabbox.clawd.bot`.
-4. Add heartbeat support for long-running commands.
+2. Add GitHub org/team allowlisting for browser-login user tokens.
+3. Delegate `openclaw.ai` to Cloudflare or provide a token that can create/manage that zone, then attach `crabbox.openclaw.ai/*`.
+4. Add Cloudflare Access service-token support for non-browser CLI use on fallback routes.
 5. Add one-shot `run --profile` cleanup semantics coverage in integration tests.
-6. Add coordinator admin cleanup/drain endpoints.
+6. Add coordinator drain controls beyond release/delete.
 7. Re-run OpenClaw `pnpm test:changed:max` on `ccx63` and compare against the current Crabbox baseline.

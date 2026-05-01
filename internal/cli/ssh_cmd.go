@@ -35,7 +35,7 @@ func (a App) ssh(ctx context.Context, args []string) error {
 	if err := claimLeaseForRepo(leaseID, serverSlug(server), repo.Root, cfg.IdleTimeout, *reclaim); err != nil {
 		return err
 	}
-	a.touchCoordinatorLeaseBestEffort(ctx, cfg, leaseID)
+	a.touchActiveLeaseBestEffort(ctx, cfg, server, leaseID)
 	fmt.Fprintf(a.Stdout, "ssh -i %s -p %s %s@%s\n", target.Key, target.Port, target.User, target.Host)
 	return nil
 }

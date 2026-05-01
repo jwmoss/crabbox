@@ -15,6 +15,8 @@ Usage requires a configured coordinator. Direct-provider mode has no central his
 
 Lease ownership comes from Cloudflare Access when available. In bearer-token mode, the CLI sends `CRABBOX_OWNER`, Git email env, or local `git config user.email`; set `CRABBOX_ORG` to group leases under an org.
 
+GitHub browser-login users see their own owner/org usage regardless of requested `--scope`, `--user`, or `--org`. Fleet-wide `--scope org` and `--scope all` views require shared-token admin auth.
+
 ## Scopes
 
 Scopes:

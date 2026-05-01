@@ -23,11 +23,12 @@ write_files:
     content: |
       #!/usr/bin/env bash
       set -euo pipefail
-      node --version
-      pnpm --version
       git --version
       rsync --version >/dev/null
-      docker --version
+      curl --version >/dev/null
+      jq --version >/dev/null
+      test -f /var/lib/crabbox/bootstrapped
+      test -w ${config.workRoot}
 runcmd:
   - |
     bash -euxo pipefail <<'BOOT'
@@ -48,18 +49,13 @@ runcmd:
       done
     }
     retry apt-get update
-    retry apt-get install -y --no-install-recommends openssh-server ca-certificates curl git rsync build-essential docker.io jq
+    retry apt-get install -y --no-install-recommends openssh-server ca-certificates curl git rsync jq
     mkdir -p ${config.workRoot} /var/cache/crabbox/pnpm /var/cache/crabbox/npm
     chown -R ${config.sshUser}:${config.sshUser} ${config.workRoot} /var/cache/crabbox
+    install -d /var/lib/crabbox
+    touch /var/lib/crabbox/bootstrapped
     systemctl enable --now ssh
     systemctl restart ssh
-    systemctl enable --now docker
-    usermod -aG docker ${config.sshUser}
-    retry bash -c 'curl -fsSL https://deb.nodesource.com/setup_24.x | bash -'
-    retry apt-get install -y nodejs
-    corepack enable
-    retry corepack prepare pnpm@10.33.2 --activate
-    sudo -u ${config.sshUser} bash -lc 'pnpm config set store-dir /var/cache/crabbox/pnpm'
     crabbox-ready
     BOOT
 `;

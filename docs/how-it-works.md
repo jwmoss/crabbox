@@ -43,7 +43,7 @@ The CLI talks to the broker over HTTPS, then talks **directly** to the leased ru
 | **CLI** | config + flags; per-lease SSH key; SSH readiness; Git seeding + rsync; sync fingerprints + sanity checks; remote command + streaming; heartbeats; release |
 | **Broker** | request auth + identity; serialized lease state; provider credentials; machine create/delete; lease expiry; pool/status/inspect; usage; spend caps |
 | **Provider** | raw compute: Hetzner Cloud servers or AWS EC2 Spot instances |
-| **Runner** | nothing durable: Ubuntu prepared by cloud-init with SSH, Node 24, pnpm, Docker, Git, rsync, build tools, `/work/crabbox` |
+| **Runner** | nothing durable: Ubuntu prepared by cloud-init with SSH, Git, rsync, curl, jq, `/work/crabbox`; project runtimes come from repo-owned setup |
 
 ## What `crabbox run` does
 

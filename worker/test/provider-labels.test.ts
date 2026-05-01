@@ -40,6 +40,13 @@ describe("provider labels", () => {
       "aws",
       new Date("2026-05-01T12:00:00Z"),
     );
-    expect(labels.expires_at).toBe("2026-05-01T12:10:00.000Z");
+    expect(labels.expires_at).toBe("1777637400");
+    expect(labels.created_at).toBe("1777636800");
+    expect(labels.last_touched_at).toBe("1777636800");
+    expect(labels.idle_timeout_secs).toBe("7200");
+    expect(labels.ttl_secs).toBe("600");
+    for (const value of Object.values(labels)) {
+      expect(value).toMatch(/^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$/);
+    }
   });
 });

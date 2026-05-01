@@ -10,7 +10,7 @@ export function leaseProviderLabels(
   now: Date,
   extra: Record<string, string> = {},
 ): Record<string, string> {
-  return {
+  return sanitizeLabels({
     class: config.class,
     crabbox: "true",
     created_by: "crabbox",
@@ -23,16 +23,32 @@ export function leaseProviderLabels(
     provider,
     server_type: config.serverType,
     state: "leased",
-    created_at: now.toISOString(),
-    last_touched_at: now.toISOString(),
+    created_at: labelTime(now),
+    last_touched_at: labelTime(now),
+    ttl_secs: String(config.ttlSeconds),
     idle_timeout_secs: String(config.idleTimeoutSeconds),
-    expires_at: new Date(
-      now.getTime() + Math.min(config.ttlSeconds, config.idleTimeoutSeconds) * 1000,
-    ).toISOString(),
+    expires_at: labelTime(
+      new Date(now.getTime() + Math.min(config.ttlSeconds, config.idleTimeoutSeconds) * 1000),
+    ),
     ...extra,
-  };
+  });
 }
 
 function sanitizeLabel(value: string): string {
-  return value.replaceAll(/[^a-zA-Z0-9_.@-]/g, "_").slice(0, 63) || "unknown";
+  const cleaned = value
+    .trim()
+    .replaceAll(/[^a-zA-Z0-9_.-]/g, "_")
+    .slice(0, 63)
+    .replaceAll(/^[_.-]+|[_.-]+$/g, "");
+  return cleaned || "unknown";
+}
+
+function sanitizeLabels(labels: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(labels).map(([key, value]) => [key, sanitizeLabel(value)]),
+  );
+}
+
+function labelTime(value: Date): string {
+  return String(Math.trunc(value.getTime() / 1000));
 }

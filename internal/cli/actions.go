@@ -86,7 +86,7 @@ func (a App) actionsHydrate(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	target, leaseID, slug, err := a.resolveLeaseTargetForActions(ctx, cfg, *leaseIDFlag)
+	server, target, leaseID, slug, err := a.resolveLeaseTargetForActions(ctx, cfg, *leaseIDFlag)
 	if err != nil {
 		return err
 	}
@@ -98,6 +98,8 @@ func (a App) actionsHydrate(ctx context.Context, args []string) error {
 	} else if ok {
 		stopHeartbeat := startCoordinatorHeartbeat(ctx, coord, leaseID, cfg.IdleTimeout, nil, a.Stderr)
 		defer stopHeartbeat()
+	} else {
+		a.touchActiveLeaseBestEffort(ctx, cfg, server, leaseID)
 	}
 	label := githubActionsLeaseLabel(leaseID)
 	if err := a.registerGitHubActionsRunner(ctx, cfg, target, leaseID, slug, ghRepo, "", nil); err != nil {
@@ -207,7 +209,7 @@ func (a App) actionsRegister(ctx context.Context, args []string) error {
 	if err := claimLeaseForRepo(leaseID, serverSlug(server), repo.Root, cfg.IdleTimeout, *reclaim); err != nil {
 		return err
 	}
-	a.touchCoordinatorLeaseBestEffort(ctx, cfg, leaseID)
+	a.touchActiveLeaseBestEffort(ctx, cfg, server, leaseID)
 	return a.registerGitHubActionsRunner(ctx, cfg, target, leaseID, serverSlug(server), ghRepo, *nameFlag, extraLabels)
 }
 
@@ -273,19 +275,19 @@ func (a App) registerGitHubActionsRunner(ctx context.Context, cfg Config, target
 	return nil
 }
 
-func (a App) resolveLeaseTargetForActions(ctx context.Context, cfg Config, id string) (SSHTarget, string, string, error) {
+func (a App) resolveLeaseTargetForActions(ctx context.Context, cfg Config, id string) (Server, SSHTarget, string, string, error) {
 	if coord, ok, err := newCoordinatorClient(cfg); err != nil {
-		return SSHTarget{}, "", "", err
+		return Server{}, SSHTarget{}, "", "", err
 	} else if ok {
 		lease, err := coord.GetLease(ctx, id)
 		if err != nil {
-			return SSHTarget{}, "", "", err
+			return Server{}, SSHTarget{}, "", "", err
 		}
-		_, target, leaseID := leaseToServerTarget(lease, cfg)
-		return target, leaseID, lease.Slug, nil
+		server, target, leaseID := leaseToServerTarget(lease, cfg)
+		return server, target, leaseID, lease.Slug, nil
 	}
 	server, target, leaseID, err := a.findLease(ctx, cfg, id)
-	return target, leaseID, serverSlug(server), err
+	return server, target, leaseID, serverSlug(server), err
 }
 
 func dispatchGitHubActionsWorkflow(ctx context.Context, dir string, repo GitHubRepo, workflow, ref string, fields []string) error {

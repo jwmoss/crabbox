@@ -101,6 +101,8 @@ Usage:
   crabbox run [flags] -- <command...>
 
 Start Here:
+  crabbox login
+      Open GitHub login and store broker credentials.
   crabbox doctor
       Check local tools, config, broker, and provider access.
   crabbox init
@@ -112,7 +114,7 @@ Start Here:
 
 Commands:
   init        Onboard the current repo for Crabbox
-  login       Store broker credentials and verify access
+  login       Open GitHub login, store broker credentials, verify access
   logout      Remove the stored broker token
   whoami      Show broker identity
   doctor      Check local and broker/provider readiness
@@ -141,7 +143,7 @@ Common Flows:
   crabbox run --id blue-lobster --shell 'pnpm install --frozen-lockfile && pnpm test'
   crabbox ssh --id blue-lobster
   crabbox inspect --id blue-lobster --json
-  crabbox history --lease cbx_123
+  crabbox history --lease cbx_abcdef123456
   crabbox logs run_123
   crabbox results run_123
   crabbox cache stats --id blue-lobster
@@ -149,7 +151,7 @@ Common Flows:
   crabbox admin leases --state active
   crabbox warmup --actions-runner
   crabbox actions hydrate --id blue-lobster
-  crabbox actions dispatch -f testbox_id=cbx_123
+  crabbox actions dispatch -f testbox_id=cbx_abcdef123456
   crabbox stop blue-lobster
 
 Global:
@@ -157,6 +159,8 @@ Global:
   --version      Print version
 
 Config:
+  crabbox login [--url <url>] [--provider aws|hetzner] [--no-browser]
+  crabbox login --url <url> --token-stdin [--provider aws|hetzner]
   crabbox config path
   crabbox config show [--json]
   crabbox config set-broker --url <url> --token-stdin [--provider aws|hetzner]

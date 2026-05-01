@@ -3,8 +3,11 @@ package cli
 import (
 	"fmt"
 	"hash/fnv"
+	"regexp"
 	"strings"
 )
+
+var canonicalLeaseIDPattern = regexp.MustCompile(`^cbx_[a-f0-9]{12}$`)
 
 var leaseSlugAdjectives = []string{
 	"amber",
@@ -102,6 +105,10 @@ func serverSlug(server Server) string {
 		return ""
 	}
 	return normalizeLeaseSlug(server.Labels["slug"])
+}
+
+func isCanonicalLeaseID(value string) bool {
+	return canonicalLeaseIDPattern.MatchString(value)
 }
 
 func leaseSlugHash(value string) uint32 {

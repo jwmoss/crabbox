@@ -2,19 +2,25 @@
 
 ## Current Intended Setup
 
-Primary public endpoint:
+Canonical Worker endpoint:
 
 ```text
 https://crabbox.openclaw.ai
 ```
 
-Current deployable Cloudflare fallback:
+Legacy fallback route:
 
 ```text
 https://crabbox.clawd.bot
 ```
 
-Reason for the fallback: `openclaw.ai` currently resolves through Namecheap nameservers and is not visible as a Cloudflare zone in the available Cloudflare account. Cloudflare Workers custom domains are simplest when the zone is managed by Cloudflare.
+Workers.dev fallback endpoint:
+
+```text
+https://crabbox-coordinator.steipete.workers.dev
+```
+
+The `crabbox.openclaw.ai/*` Worker route is the stable automation and browser-login endpoint. `crabbox.clawd.bot/*` and the workers.dev URL remain fallback routes.
 
 ## Cloudflare
 
@@ -24,7 +30,7 @@ Use Cloudflare for:
 - Access auth.
 - Worker runtime.
 - Durable Object lease state.
-- DNS/custom domain once the target zone is available.
+- DNS/custom domain routing.
 
 Known setup:
 
@@ -46,6 +52,7 @@ CRABBOX_CLOUDFLARE_ZONE_NAME
 CRABBOX_DOMAIN
 CRABBOX_FALLBACK_DOMAIN
 CRABBOX_GITHUB_ALLOWED_ORG
+CRABBOX_GITHUB_ALLOWED_ORGS
 ```
 
 GitHub IdP needs a GitHub OAuth app:
@@ -57,11 +64,22 @@ Homepage URL: https://crabbox.openclaw.ai
 Callback URL: https://openclaw-crabbox.cloudflareaccess.com/cdn-cgi/access/callback
 ```
 
+Crabbox browser login also needs a coordinator OAuth callback on the same or a second GitHub OAuth app:
+
+```text
+Homepage URL: https://github.com/openclaw/crabbox
+Callback URL: https://crabbox.openclaw.ai/v1/auth/github/callback
+```
+
 Store resulting values outside the repo:
 
 ```text
 CRABBOX_GITHUB_OAUTH_CLIENT_ID
 CRABBOX_GITHUB_OAUTH_CLIENT_SECRET
+CRABBOX_GITHUB_CLIENT_ID
+CRABBOX_GITHUB_CLIENT_SECRET
+CRABBOX_GITHUB_ALLOWED_ORG
+CRABBOX_SESSION_SECRET
 ```
 
 Current local status:
@@ -69,29 +87,29 @@ Current local status:
 - Core Cloudflare, Hetzner, and GitHub tokens are present in local `~/.profile`.
 - The Crabbox Cloudflare token is mirrored to MacBook Pro `~/.profile`.
 - `CRABBOX_COORDINATOR` and `CRABBOX_COORDINATOR_TOKEN` are present in local and MacBook Pro `~/.profile`.
-- GitHub OAuth client ID and secret are present in local and MacBook Pro `~/.profile`.
+- Cloudflare Access GitHub OAuth client ID and secret may be stored locally as `CRABBOX_GITHUB_OAUTH_*`.
+- Crabbox browser-login OAuth secrets are deployed as Worker secrets `CRABBOX_GITHUB_CLIENT_ID`, `CRABBOX_GITHUB_CLIENT_SECRET`, and `CRABBOX_SESSION_SECRET`.
 - Cloudflare Access GitHub IdP is created.
+- Worker route is attached for `crabbox.openclaw.ai/*`.
 - Cloudflare Access fallback app is created for `crabbox.clawd.bot`.
 - `CRABBOX_COORDINATOR`, `CRABBOX_PROFILE`, `CRABBOX_CONFIG`, `CRABBOX_FLEET_CONFIG`, `CRABBOX_SSH_KEY`, `CRABBOX_NO_COLOR`, and `CRABBOX_LOG` are optional CLI defaults and are not required to build the MVP.
 
-The Cloudflare token `crabbox-deploy` is scoped to `Steipete@gmail.com's Account` and the `clawd.bot` zone. It verifies access to Workers scripts, Access applications, Access identity providers, Access keys, DNS records, and zone Worker routes from both the local machine and MacBook Pro.
+The Cloudflare token `crabbox-deploy` is scoped to `Steipete@gmail.com's Account` and the Crabbox zones. It verifies access to Workers scripts, Access applications, Access identity providers, Access keys, DNS records, and zone Worker routes from both the local machine and MacBook Pro.
 
 ## DNS Decision
 
 Preferred path:
 
-1. Add `openclaw.ai` to Cloudflare.
-2. Copy existing DNS records exactly.
-3. Add `crabbox.openclaw.ai`.
-4. Switch nameservers at registrar.
-5. Deploy Worker custom domain.
+1. Keep `openclaw.ai` in Cloudflare.
+2. Add proxied DNS for `crabbox.openclaw.ai`.
+3. Deploy Worker route `crabbox.openclaw.ai/*`.
+4. Set `CRABBOX_PUBLIC_URL=https://crabbox.openclaw.ai`.
+5. Configure the GitHub OAuth callback on `https://crabbox.openclaw.ai/v1/auth/github/callback`.
 
 Temporary path:
 
-1. Deploy Worker under `crabbox.clawd.bot`.
-2. Keep `CRABBOX_DOMAIN=crabbox.openclaw.ai` as intended target.
-3. Use fallback domain for early testing.
-4. Move to `openclaw.ai` once DNS is ready.
+1. Use the workers.dev URL for health checks if DNS is disrupted.
+2. Use `crabbox.clawd.bot` only as a legacy fallback.
 
 ## Hetzner
 
@@ -104,7 +122,7 @@ HCLOUD_TOKEN
 HETZNER_TOKEN
 ```
 
-MVP defaults:
+Direct Hetzner defaults:
 
 ```yaml
 provider: hetzner-main
@@ -123,8 +141,13 @@ crabbox=true
 profile=openclaw-check
 class=ccx33
 lease=cbx_...
+slug=blue-lobster
 owner=<github-login-or-email>
-ttl=<timestamp>
+created_at=<unix-seconds>
+last_touched_at=<unix-seconds>
+ttl_secs=<seconds>
+idle_timeout_secs=<seconds>
+expires_at=<unix-seconds>
 ```
 
 Current direct-CLI status:
@@ -132,7 +155,7 @@ Current direct-CLI status:
 - `crabbox warmup --profile openclaw-check --class beast --keep` provisions through the Hetzner API without requiring `hcloud`.
 - The `beast` class tries `ccx63`, `ccx53`, `ccx43`, `cpx62`, then `cx53`.
 - Dedicated-core types currently fail on the available account quota, so the verified runner used `cpx62`.
-- Cloud-init installs Node 24, pnpm via corepack, Docker, Git, rsync, and a readiness probe through a retrying bootstrap script. This is required because AWS Ubuntu mirrors can transiently return 503 during Docker dependency installation.
+- Cloud-init installs only Crabbox plumbing: OpenSSH, curl/CA certificates, Git, rsync, jq, and a readiness probe through a retrying bootstrap script. Project runtimes and services are supplied by Actions hydration or repo-owned setup.
 - SSH prefers port 2222 and falls back to port 22 during AWS bootstrap when the base image exposes default SSH before the custom port restart lands.
 - The verified kept lease was `cbx_f782c469c9ce` on server `128694755`, `cpx62`, `188.245.91.84`.
 
@@ -166,9 +189,12 @@ CRABBOX_AWS_SECURITY_GROUP_ID    optional security group override
 CRABBOX_AWS_SUBNET_ID            optional subnet override
 CRABBOX_AWS_INSTANCE_PROFILE     optional IAM instance profile name
 CRABBOX_AWS_ROOT_GB              default 400
+CRABBOX_AWS_SSH_CIDRS            optional comma-separated SSH source CIDRs
 ```
 
 The AWS provider imports the local SSH public key as an EC2 key pair when needed, creates or reuses a `crabbox-runners` security group when no security group is supplied, launches one-time Spot instances, tags instances and volumes with Crabbox lease metadata, and terminates non-kept instances after the command.
+
+SSH ingress for broker-created AWS security groups is source-scoped. If `CRABBOX_AWS_SSH_CIDRS` is set, Crabbox adds those CIDRs. Otherwise, when Cloudflare provides `CF-Connecting-IP`, the Worker adds that request source as `/32` or `/128`. Crabbox also revokes the old managed `0.0.0.0/0` SSH ingress rule when it touches the managed security group. Supplying `CRABBOX_AWS_SECURITY_GROUP_ID` makes network policy your responsibility.
 
 ## Machine Classes
 
@@ -218,51 +244,18 @@ classes:
 
 Profiles choose a default class, and commands can override with `--class`.
 
-## Fleet Repo
-
-`openclaw/crabbox-fleet` should contain:
-
-```text
-fleet.yaml
-profiles/openclaw.yaml
-bootstrap/cloud-init.yaml
-images/README.md
-```
-
-It should not contain secrets or live lease data.
-
-Example:
-
-```json
-{
-  "profile": "project-check",
-  "class": "fast",
-  "sync": {
-    "delete": true,
-    "checksum": false,
-    "gitSeed": true,
-    "fingerprint": true,
-    "baseRef": "main",
-    "exclude": ["node_modules", ".turbo", "dist"]
-  },
-  "env": {
-    "allow": ["CI", "NODE_OPTIONS", "PROJECT_*"]
-  }
-}
-```
-
 ## Deployment
 
-MVP deploy command:
+Worker source lives in `worker/`. Build and deploy with the package scripts plus Wrangler:
 
 ```sh
-crabbox admin deploy-coordinator
-```
-
-Or a script first:
-
-```sh
-scripts/deploy-worker
+npm ci --prefix worker
+npm run format:check --prefix worker
+npm run lint --prefix worker
+npm run check --prefix worker
+npm test --prefix worker
+npm run build --prefix worker
+npx wrangler deploy --config worker/wrangler.jsonc
 ```
 
 Deployment should:
@@ -272,22 +265,26 @@ Deployment should:
 3. Set Worker secrets.
 4. Deploy Worker.
 5. Verify `/v1/health` on `workers.dev`.
-6. Configure route/custom domain on `crabbox.clawd.bot`.
-7. Verify `/v1/health` on the fallback domain.
+6. Configure route/custom domain on `crabbox.openclaw.ai`.
+7. Verify `/v1/health` on the canonical and fallback domains.
 
 Use `npx wrangler` from the Worker package unless `wrangler` is installed globally. Do not assume `hcloud` is installed; the implementation can use the Hetzner API directly from Go or from the Worker.
 
 Current deployed coordinator:
 
 ```text
+https://crabbox.openclaw.ai
 https://crabbox-coordinator.steipete.workers.dev
-crabbox.clawd.bot/* -> crabbox-coordinator, protected by Cloudflare Access
+crabbox.clawd.bot/* -> crabbox-coordinator fallback
 ```
 
 Current Worker secrets:
 
 ```text
 HETZNER_TOKEN
+AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY
+AWS_SESSION_TOKEN optional
 CRABBOX_SHARED_TOKEN
 ```
 

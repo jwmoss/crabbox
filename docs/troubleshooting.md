@@ -96,7 +96,8 @@ Checks:
 
 ```sh
 bin/crabbox inspect --id cbx_... --json
-ssh -p 2222 crabbox@HOST test -f /var/lib/crabbox-ready
+ssh -p 2222 crabbox@HOST crabbox-ready
+ssh -p 2222 crabbox@HOST test -f /var/lib/crabbox/bootstrapped
 ```
 
 Fixes:

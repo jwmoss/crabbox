@@ -2,7 +2,7 @@ import { AwsClient } from "aws4fetch";
 import { XMLParser } from "fast-xml-parser";
 
 import { cloudInit } from "./bootstrap";
-import { awsInstanceTypeCandidatesForClass, type LeaseConfig } from "./config";
+import { awsInstanceTypeCandidatesForClass, validCIDRs, type LeaseConfig } from "./config";
 import { leaseProviderLabels } from "./provider-labels";
 import { leaseProviderName } from "./slug";
 import type { Env, ProviderMachine } from "./types";
@@ -308,14 +308,24 @@ export class EC2SpotClient {
     if (!groupID) {
       throw new Error("aws security group id is empty");
     }
+    const cidrs = awsSSHCIDRs(config, this.env);
     for (const port of uniquePorts(["22", config.sshPort])) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- duplicate ingress handling is per port.
-      await this.allowTCP(groupID, port).catch((error: unknown) => {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- cleanup is per port.
+      await this.revokeWorldTCP(groupID, port).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        if (!message.includes("InvalidPermission.Duplicate")) {
+        if (!message.includes("InvalidPermission.NotFound")) {
           throw error;
         }
       });
+      for (const cidr of cidrs) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- duplicate ingress handling is per CIDR.
+        await this.allowTCP(groupID, port, cidr).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!message.includes("InvalidPermission.Duplicate")) {
+            throw error;
+          }
+        });
+      }
     }
     return groupID;
   }
@@ -341,16 +351,32 @@ export class EC2SpotClient {
     return vpcID;
   }
 
-  private async allowTCP(groupID: string, port: string): Promise<void> {
+  private async allowTCP(groupID: string, port: string, cidr: string): Promise<void> {
     if (!/^[1-9][0-9]{0,4}$/.test(port) || Number(port) > 65_535) {
       throw new Error(`invalid SSH port: ${port}`);
     }
-    await this.ec2("AuthorizeSecurityGroupIngress", {
+    const params: Record<string, string> = {
+      GroupId: groupID,
+      "IpPermissions.1.FromPort": port,
+      "IpPermissions.1.IpProtocol": "tcp",
+      "IpPermissions.1.ToPort": port,
+    };
+    if (cidr.includes(":")) {
+      params["IpPermissions.1.Ipv6Ranges.1.CidrIpv6"] = cidr;
+      params["IpPermissions.1.Ipv6Ranges.1.Description"] = "Crabbox SSH";
+    } else {
+      params["IpPermissions.1.IpRanges.1.CidrIp"] = cidr;
+      params["IpPermissions.1.IpRanges.1.Description"] = "Crabbox SSH";
+    }
+    await this.ec2("AuthorizeSecurityGroupIngress", params);
+  }
+
+  private async revokeWorldTCP(groupID: string, port: string): Promise<void> {
+    await this.ec2("RevokeSecurityGroupIngress", {
       GroupId: groupID,
       "IpPermissions.1.FromPort": port,
       "IpPermissions.1.IpProtocol": "tcp",
       "IpPermissions.1.IpRanges.1.CidrIp": "0.0.0.0/0",
-      "IpPermissions.1.IpRanges.1.Description": "Crabbox SSH",
       "IpPermissions.1.ToPort": port,
     });
   }
@@ -374,6 +400,17 @@ export class EC2SpotClient {
     const root = parsedRecord[`${action}Response`] ?? parsedRecord["Response"] ?? parsedRecord;
     return record(root);
   }
+}
+
+function awsSSHCIDRs(config: LeaseConfig, env: Env): string[] {
+  const configured = [...config.awsSSHCIDRs, ...(env.CRABBOX_AWS_SSH_CIDRS ?? "").split(",")];
+  const cidrs = validCIDRs(configured);
+  if (cidrs.length === 0) {
+    throw new Error(
+      "AWS SSH source CIDR is required; set CRABBOX_AWS_SSH_CIDRS or use Cloudflare request IP forwarding",
+    );
+  }
+  return cidrs;
 }
 
 function reservations(root: Record<string, unknown>): Record<string, unknown>[] {

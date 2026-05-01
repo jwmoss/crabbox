@@ -12,10 +12,11 @@ func TestCloudInitUsesRetryingBootstrap(t *testing.T) {
 		"bash -euxo pipefail <<'BOOT'",
 		"Acquire::Retries \"8\";",
 		"retry apt-get update",
-		"retry apt-get install -y --no-install-recommends openssh-server ca-certificates curl git rsync build-essential docker.io jq",
-		"https://deb.nodesource.com/setup_24.x",
-		"retry corepack prepare pnpm@10.33.2 --activate",
-		"docker --version",
+		"retry apt-get install -y --no-install-recommends openssh-server ca-certificates curl git rsync jq",
+		"curl --version >/dev/null",
+		"test -f /var/lib/crabbox/bootstrapped",
+		"test -w /work/crabbox",
+		"touch /var/lib/crabbox/bootstrapped",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("cloudInit() missing %q", want)
@@ -23,5 +24,10 @@ func TestCloudInitUsesRetryingBootstrap(t *testing.T) {
 	}
 	if strings.Contains(got, "\npackages:\n") {
 		t.Fatal("cloudInit() must not use cloud-init's one-shot packages module")
+	}
+	for _, notWant := range []string{"go version", "golang-go", "go.dev/dl/go", "/usr/local/go", "node --version", "pnpm --version", "docker --version", "build-essential", "docker.io", "corepack"} {
+		if strings.Contains(got, notWant) {
+			t.Fatalf("cloudInit() should not install project language runtime %q", notWant)
+		}
 	}
 }

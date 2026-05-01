@@ -4,7 +4,7 @@ Read when:
 
 - changing cloud-init;
 - debugging machines that never become SSH-ready;
-- changing installed runner tools or readiness checks.
+- changing the minimal runner contract or readiness checks.
 
 Each runner is an Ubuntu machine prepared by cloud-init. It does not need coordinator credentials.
 
@@ -18,16 +18,13 @@ Bootstrap creates:
 
 Bootstrap installs:
 
-- Node 24;
-- pnpm through corepack;
-- Docker;
+- curl and CA certificates;
 - Git;
 - rsync;
-- build-essential;
 - jq;
 - OpenSSH server.
 
-Package setup uses retry wrappers for apt, NodeSource setup, and corepack. A machine should not pass readiness until `crabbox-ready` succeeds over SSH.
+Bootstrap intentionally does not install project language runtimes such as Go, Node, pnpm, Docker, databases, or service dependencies. Those belong in GitHub Actions hydration, devcontainers, Nix, mise/asdf, or repository setup scripts. A machine should not pass readiness until `crabbox-ready` succeeds over SSH.
 
 The CLI prefers the configured SSH port and can fall back to port 22 during early bootstrap. Long term, snapshots or provider images can replace slow cloud-init once the bootstrap contract is stable.
 
