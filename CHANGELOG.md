@@ -4,7 +4,6 @@
 
 ### Added
 
-- Native OpenClaw plugin package exposing Crabbox run, warmup, status, list, and stop tools.
 - Added GitHub browser login for `crabbox login`, including signed user tokens, polling-based CLI completion, `--no-browser`, and JSON output support.
 - Added coordinator OAuth routes for GitHub login: `/v1/auth/github/start`, `/v1/auth/github/callback`, and `/v1/auth/github/poll`.
 - Added signed non-admin user-token auth in the Worker while keeping the shared operator token for admin routes.
@@ -31,7 +30,7 @@
 
 ## 0.1.0 - 2026-05-01
 
-Crabbox 0.1.0 is the first public release: a Go CLI, Cloudflare Worker coordinator, and OpenClaw plugin for leasing fast remote Linux machines, syncing dirty worktrees, running commands, and releasing or reusing warm boxes safely.
+Crabbox 0.1.0 is the first public release: a Go CLI and Cloudflare Worker coordinator for leasing fast remote Linux machines, syncing dirty worktrees, running commands, and releasing or reusing warm boxes safely.
 
 ### Highlights
 
@@ -41,7 +40,6 @@ Crabbox 0.1.0 is the first public release: a Go CLI, Cloudflare Worker coordinat
 - Keep warm boxes ergonomic without runaway cost: kept leases auto-release after an idle timeout, defaulting to `30m`, while `--ttl` remains a maximum wall-clock cap.
 - Hydrate a leased box through a project-owned GitHub Actions workflow so repositories define their own runtimes, services, secrets, caches, and readiness.
 - Keep runner bootstrap intentionally tiny: SSH, Git, rsync, curl, jq, `/work/crabbox`, and cache directories only. Go, Node, pnpm, Docker, databases, and services belong to the repo setup layer.
-- Drive Crabbox from OpenClaw through native plugin tools for run, warmup, status, list, and stop.
 - Install via Homebrew with `brew install openclaw/tap/crabbox`, or download GoReleaser archives for macOS, Linux, and Windows.
 
 ### CLI
@@ -118,12 +116,6 @@ Crabbox 0.1.0 is the first public release: a Go CLI, Cloudflare Worker coordinat
 - Added non-secret environment handoff from the hydration workflow to later Crabbox commands.
 - Added stop-marker writing so `crabbox stop` can ask the waiting Actions job to exit cleanly.
 - Runner labels include `crabbox`, canonical lease labels, readable slug labels, and profile/class labels.
-
-### OpenClaw Plugin
-
-- Added a native OpenClaw plugin package at the repository root.
-- Added `crabbox_run`, `crabbox_warmup`, `crabbox_status`, `crabbox_list`, and `crabbox_stop` tools.
-- Added plugin tests that verify command construction and disabled-tool behavior.
 
 ### Results, Cache, And History
 

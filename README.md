@@ -52,8 +52,6 @@ crabbox usage --scope all --json
 
 `crabbox usage` reads coordinator history, so it requires a configured broker. Cost is an estimate for compute leases, not a provider invoice: the coordinator prefers explicit `CRABBOX_COST_RATES_JSON` overrides, then provider pricing from AWS Spot history or Hetzner server-type prices, then built-in fallback rates. Full reference: [docs/commands/usage.md](docs/commands/usage.md).
 
-Use the OpenClaw plugin when an agent should drive Crabbox through OpenClaw tools instead of shelling out manually. The repository root is also a native OpenClaw plugin package; install it from this repo or from a packaged release, then use the `crabbox_run`, `crabbox_warmup`, `crabbox_status`, `crabbox_list`, and `crabbox_stop` tools.
-
 Stop a kept server:
 
 ```sh
@@ -90,7 +88,6 @@ For the full mental model, see [How Crabbox Works](docs/how-it-works.md). For th
 - **Cost guardrails.** Per-lease and monthly spend caps. Live pricing from EC2 Spot history or Hetzner server-type prices, with static fallbacks. `crabbox usage` summarizes spend by user, org, provider, and type.
 - **GitHub Actions hydration.** `crabbox actions hydrate` registers a leased box as an ephemeral Actions runner, so the repo's own workflow installs runtimes, services, and secrets. Crabbox does not parse Actions YAML.
 - **AWS image cache.** `crabbox image current|list|create` lets trusted operators inspect the active AMI and capture scrubbed, warmed AWS runner images after hydration.
-- **OpenClaw plugin.** The repo root is a native OpenClaw plugin. Agents drive Crabbox through `crabbox_run`, `crabbox_warmup`, `crabbox_status`, `crabbox_list`, and `crabbox_stop` instead of shelling out.
 - **Operator surface.** `doctor`, `init`, `status`, `inspect`, `list`, `usage`, `history`, `logs`, `results`, `cache`, `admin`, `cleanup`, plus `--json` output where it matters.
 
 ## Machine classes
@@ -151,14 +148,6 @@ blacksmith:
 
 Forwarded environment is intentionally narrow: `NODE_OPTIONS` and `CI`. Do not pass secrets as command-line arguments. Full env-var reference and per-command flags are in [docs/cli.md](docs/cli.md) and [docs/commands/](docs/commands/README.md).
 
-## OpenClaw plugin
-
-The repo root is a native OpenClaw plugin package. Once installed, it exposes Crabbox as agent tools:
-
-- `crabbox_run`, `crabbox_warmup`, `crabbox_status`, `crabbox_list`, `crabbox_stop`
-
-The plugin shells out to the configured `crabbox` binary, so local config, broker login, repo claims, and sync behavior stay owned by the CLI. Set `plugins.entries.crabbox.config.binary` if `crabbox` is not on `PATH`.
-
 ## Development
 
 ```sh
@@ -194,7 +183,7 @@ open dist/docs-site/index.html
 
 ## Status
 
-Crabbox 0.1.0 (2026-05-01) is the first public release. Working today: brokered Hetzner + AWS Spot provisioning, warm-box reuse, GitHub Actions hydration, cost guardrails, run history, JUnit summaries, OpenClaw plugin, and the full CLI surface listed above. **Not yet:** untrusted multi-tenant isolation — Crabbox today assumes shared trust between operators of a single broker.
+Crabbox 0.1.0 (2026-05-01) is the first public release. Working today: brokered Hetzner + AWS Spot provisioning, warm-box reuse, GitHub Actions hydration, cost guardrails, run history, JUnit summaries, and the full CLI surface listed above. **Not yet:** untrusted multi-tenant isolation — Crabbox today assumes shared trust between operators of a single broker.
 
 ## License
 
