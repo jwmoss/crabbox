@@ -18,6 +18,8 @@ func (a App) image(ctx context.Context, args []string) error {
 		return a.imageList(ctx, args[1:])
 	case "create":
 		return a.imageCreate(ctx, args[1:])
+	case "promote":
+		return a.imagePromote(ctx, args[1:])
 	default:
 		return exit(2, "unknown image command %q", args[0])
 	}
@@ -123,6 +125,46 @@ func (a App) imageCreate(ctx context.Context, args []string) error {
 		return err
 	}
 	return printAWSImage(a.Stdout, image, *jsonOut)
+}
+
+func (a App) imagePromote(_ context.Context, args []string) error {
+	fs := newFlagSet("image promote", a.Stderr)
+	provider := fs.String("provider", "aws", "provider: aws")
+	jsonOut := fs.Bool("json", false, "print JSON")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	if *provider != "aws" {
+		return exit(2, "image promote only supports provider=aws")
+	}
+	if fs.NArg() != 1 {
+		return exit(2, "usage: crabbox image promote <ami-id>")
+	}
+	ami := fs.Arg(0)
+	if !strings.HasPrefix(ami, "ami-") {
+		return exit(2, "invalid AWS AMI id: %s", ami)
+	}
+	path := writableConfigPath()
+	if path == "" {
+		return exit(2, "user config directory is unavailable")
+	}
+	file, err := readFileConfig(path)
+	if err != nil {
+		return err
+	}
+	if file.AWS == nil {
+		file.AWS = &fileAWSConfig{}
+	}
+	file.AWS.AMI = ami
+	written, err := writeUserFileConfig(file)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return json.NewEncoder(a.Stdout).Encode(map[string]string{"config": written, "provider": "aws", "ami": ami})
+	}
+	fmt.Fprintf(a.Stdout, "wrote %s aws.ami=%s\n", written, ami)
+	return nil
 }
 
 func imageAWSConfig(provider string) (Config, error) {

@@ -45,6 +45,7 @@ crabbox cache warm --id <lease-id-or-slug> -- <command...>
 crabbox image current [--json]
 crabbox image list [--name <glob>] [--json]
 crabbox image create --id <lease-id-or-slug> --name <ami-name> [--wait] [--no-reboot]
+crabbox image promote <ami-id>
 crabbox actions hydrate --id <lease-id-or-slug> [--workflow <file|name|id>] [--wait-timeout <duration>]
 crabbox actions register --id <lease-id-or-slug> [--repo owner/name]
 crabbox actions dispatch [--workflow <file|name|id>] [-f key=value]
@@ -164,6 +165,7 @@ Create a warm AWS image from a hydrated kept box:
 ```sh
 crabbox image current
 crabbox image create --id blue-lobster --name openclaw-crabbox-20260501 --wait
+crabbox image promote ami-0123456789abcdef0
 ```
 
 Trusted operator lease controls:

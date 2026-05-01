@@ -153,6 +153,7 @@ Common Flows:
   crabbox image current
   crabbox image list
   crabbox image create --id blue-lobster --name openclaw-crabbox-20260501
+  crabbox image promote ami-0123456789abcdef0
   crabbox usage --scope org
   crabbox admin leases --state active
   crabbox warmup --actions-runner
