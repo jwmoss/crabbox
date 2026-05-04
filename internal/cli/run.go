@@ -23,6 +23,20 @@ func applyCapacityMarketFlag(cfg *Config, fs *flag.FlagSet, market string) error
 	}
 }
 
+func applyServerTypeFlagOverrides(cfg *Config, fs *flag.FlagSet, serverType string) {
+	if flagWasSet(fs, "type") {
+		cfg.ServerType = serverType
+		cfg.ServerTypeExplicit = true
+		return
+	}
+	if cfg.ServerTypeExplicit {
+		return
+	}
+	if cfg.ServerType == "" || flagWasSet(fs, "provider") || flagWasSet(fs, "class") || flagWasSet(fs, "target") {
+		cfg.ServerType = serverTypeForConfig(*cfg)
+	}
+}
+
 func (a App) warmup(ctx context.Context, args []string) error {
 	started := time.Now()
 	defaults := defaultConfig()
@@ -56,16 +70,10 @@ func (a App) warmup(ctx context.Context, args []string) error {
 	if err := applyTargetFlagOverrides(&cfg, fs, targetFlags); err != nil {
 		return err
 	}
-	if flagWasSet(fs, "type") {
-		cfg.ServerType = *serverType
-		cfg.ServerTypeExplicit = true
-	}
 	if err := applyCapacityMarketFlag(&cfg, fs, *market); err != nil {
 		return err
 	}
-	if cfg.ServerType == "" || ((flagWasSet(fs, "provider") || flagWasSet(fs, "class")) && !flagWasSet(fs, "type")) {
-		cfg.ServerType = serverTypeForProviderClass(cfg.Provider, *class)
-	}
+	applyServerTypeFlagOverrides(&cfg, fs, *serverType)
 	if flagWasSet(fs, "ttl") {
 		cfg.TTL = *ttl
 	}
@@ -190,16 +198,10 @@ func (a App) runCommand(ctx context.Context, args []string) (err error) {
 	if err := applyTargetFlagOverrides(&cfg, fs, targetFlags); err != nil {
 		return err
 	}
-	if flagWasSet(fs, "type") {
-		cfg.ServerType = *serverType
-		cfg.ServerTypeExplicit = true
-	}
 	if err := applyCapacityMarketFlag(&cfg, fs, *market); err != nil {
 		return err
 	}
-	if cfg.ServerType == "" || ((flagWasSet(fs, "provider") || flagWasSet(fs, "class")) && !flagWasSet(fs, "type")) {
-		cfg.ServerType = serverTypeForProviderClass(cfg.Provider, *class)
-	}
+	applyServerTypeFlagOverrides(&cfg, fs, *serverType)
 	if flagWasSet(fs, "ttl") {
 		cfg.TTL = *ttl
 	}
