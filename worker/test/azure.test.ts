@@ -84,6 +84,36 @@ describe("azure provider", () => {
     expect(deletes.some((url) => url.includes("/disks/crabbox-blue-lobster-osdisk?"))).toBe(true);
   });
 
+  it("treats successful async Azure deletes as complete without refetching deleted resources", async () => {
+    const client = new AzureClient(baseEnv);
+    const deletes: string[] = [];
+    const fakeFetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("login.microsoftonline.com")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), { status: 200 }),
+        );
+      }
+      if (init?.method === "DELETE") {
+        deletes.push(url);
+        return Promise.resolve(new Response(null, { status: 202 }));
+      }
+      if (
+        url.includes("/virtualMachines/") ||
+        url.includes("/networkInterfaces/") ||
+        url.includes("/publicIPAddresses/") ||
+        url.includes("/disks/")
+      ) {
+        return Promise.resolve(new Response("deleted", { status: 404 }));
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    }) as typeof fetch;
+    client.fetcher = fakeFetch;
+
+    await expect(client.deleteServer("crabbox-blue-lobster")).resolves.toBeUndefined();
+    expect(deletes).toHaveLength(4);
+  });
+
   it("requires the four Azure SP secrets", () => {
     expect(() => new AzureClient({ ...baseEnv, AZURE_TENANT_ID: undefined })).toThrow(
       /AZURE_TENANT_ID/,

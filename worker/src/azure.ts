@@ -540,6 +540,7 @@ export class AzureClient {
     const initialText = await response.text();
     if (response.status === 201 || response.status === 202) {
       await this.awaitLRO(response, token);
+      if (method === "DELETE") return undefined as T;
       // 201 typically returns the resource in the initial body; 202 returns nothing,
       // so re-GET the resource to read its post-provision state.
       if (initialText) return JSON.parse(initialText) as T;
