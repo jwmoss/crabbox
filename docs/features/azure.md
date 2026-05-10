@@ -9,16 +9,17 @@ Read when:
 Azure is a managed provider for Linux and native Windows SSH leases. It
 creates VMs in a shared resource group, tags them with Crabbox lease
 metadata, and bootstraps the normal SSH/sync contract through cloud-init
-on Linux or Custom Script Extension on Windows. It works in direct mode with
-local Azure auth and in brokered mode through Worker-owned service principal
-secrets.
+on Linux or Custom Script Extension on Windows. Native Windows can also run
+the shared desktop/VNC bootstrap after SSH is reachable. It works in direct
+mode with local Azure auth and in brokered mode through Worker-owned service
+principal secrets.
 
 ## Targets
 
 | Target | Managed | Notes |
 | --- | --- | --- |
 | Linux | Yes | Cloud-init bootstrap, SSH, rsync, optional desktop/browser/code. |
-| Windows | Yes | Native Windows SSH/sync/run only. No Azure desktop/browser/WSL2. |
+| Windows | Yes | Native Windows SSH/sync/run and optional desktop/VNC. No Azure browser/code/WSL2. |
 | macOS | No | Azure does not offer managed macOS; use AWS EC2 Mac or static SSH. |
 
 Examples:
@@ -27,6 +28,7 @@ Examples:
 crabbox warmup --provider azure --class beast
 crabbox run --provider azure --class standard -- pnpm test
 crabbox warmup --provider azure --target windows --class standard
+crabbox warmup --provider azure --target windows --desktop --class standard
 crabbox warmup --provider azure --desktop --browser
 crabbox vnc --id blue-lobster --open
 ```
@@ -114,10 +116,12 @@ Azure cost guardrails.
 
 ## Desktop
 
-Azure desktop leases use the standard Linux VNC path: Xvfb, a lightweight
+Azure Linux desktop leases use the standard VNC path: Xvfb, a lightweight
 desktop session, x11vnc bound to `127.0.0.1:5900`, and an SSH local tunnel
-created by `crabbox vnc`. Azure native Windows currently supports SSH, sync,
-and run only. Use AWS for managed Windows desktop or Windows WSL2.
+created by `crabbox vnc`. Azure native Windows desktop leases use the shared
+managed Windows bootstrap to install TightVNC, create the local `crabbox`
+administrator, enable auto-logon, and expose VNC only through an SSH tunnel.
+Azure Windows still does not provision browser/code or WSL2 targets.
 
 ## Cleanup
 

@@ -248,6 +248,22 @@ describe("cloud-init bootstrap", () => {
     expect(got).not.toContain("tightvnc");
   });
 
+  it("leaves Azure Windows desktop restart to the SSH bootstrap", () => {
+    const input = {
+      ...config,
+      provider: "azure",
+      target: "windows",
+      desktop: true,
+      workRoot: "C:\\crabbox",
+      sshPublicKey: "ssh-rsa test",
+    } as const;
+    const got = azureWindowsBootstrapPowerShell(input);
+    expect(got).toContain("PasswordAuthentication no");
+    expect(got).not.toContain("Set-Content -NoNewline -Encoding ASCII -Path $setupCompletePath");
+    expect(got).not.toContain("Restart-Computer");
+    expect(got).not.toContain("tightvnc");
+  });
+
   it("builds macOS user data for managed screen sharing", () => {
     const got = awsUserData({
       ...config,

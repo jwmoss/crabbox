@@ -84,7 +84,9 @@ families for this mode. Commands and sync then use the POSIX WSL contract.
 With `--provider azure --target windows`, Crabbox creates a native Windows
 Server lease, uses the Azure VM Agent Custom Script Extension to install
 OpenSSH Server and Git for Windows, and configures the `crabbox` user for
-SSH/sync/run. Azure Windows does not provision VNC/browser/WSL2.
+SSH/sync/run. Add `--desktop` to run the shared Windows desktop bootstrap over
+SSH, install TightVNC, configure auto-logon, and expose VNC through the normal
+SSH tunnel. Azure Windows does not provision browser/code/WSL2.
 
 With `--provider aws --target macos --desktop`, Crabbox launches an EC2 Mac
 instance on an already allocated Dedicated Host. Set `CRABBOX_AWS_MAC_HOST_ID`

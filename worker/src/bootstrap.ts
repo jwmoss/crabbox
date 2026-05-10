@@ -298,6 +298,9 @@ if (-not (Test-Path -LiteralPath $setupCompletePath)) {
 }
 
 export function azureWindowsBootstrapPowerShell(config: LeaseConfig): string {
+  const setupComplete = config.desktop
+    ? ""
+    : `Set-Content -NoNewline -Encoding ASCII -Path $setupCompletePath -Value (Get-Date).ToString("o")`;
   return (
     windowsBootstrapHeaderPowerShell(config) +
     `
@@ -311,7 +314,7 @@ $enforceKeyAuth = $true
 Restart-Service sshd -Force
 git --version | Out-Null
 tar --version | Out-Null
-Set-Content -NoNewline -Encoding ASCII -Path $setupCompletePath -Value (Get-Date).ToString("o")
+${setupComplete}
 `
   );
 }

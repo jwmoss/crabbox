@@ -291,6 +291,28 @@ func TestAWSUserDataWindowsWSL2Profile(t *testing.T) {
 	}
 }
 
+func TestAzureWindowsDesktopExtensionBootstrapLeavesRebootToSSHBootstrap(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Provider = "azure"
+	cfg.TargetOS = targetWindows
+	cfg.WindowsMode = windowsModeNormal
+	cfg.Desktop = true
+	cfg.WorkRoot = `C:\crabbox`
+	got := azureWindowsBootstrapPowerShell(cfg, "ssh-rsa test")
+	if !strings.Contains(got, "PasswordAuthentication no") {
+		t.Fatalf("azure windows extension bootstrap should enforce key auth")
+	}
+	if strings.Contains(got, "Set-Content -NoNewline -Encoding ASCII -Path $setupCompletePath") {
+		t.Fatalf("azure desktop extension bootstrap should not mark setup complete before desktop SSH bootstrap")
+	}
+	if strings.Contains(got, "Restart-Computer") {
+		t.Fatalf("azure extension bootstrap must not reboot")
+	}
+	if strings.Contains(got, "tightvnc") {
+		t.Fatalf("azure extension bootstrap should not install VNC")
+	}
+}
+
 func TestAWSUserDataMacOSProfile(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Provider = "aws"

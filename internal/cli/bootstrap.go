@@ -416,6 +416,10 @@ func azureWindowsBootstrapPowerShell(cfg Config, publicKey string) string {
 	if workRoot == "" {
 		workRoot = defaultWindowsWorkRoot
 	}
+	setupComplete := `Set-Content -NoNewline -Encoding ASCII -Path $setupCompletePath -Value (Get-Date).ToString("o")`
+	if cfg.Desktop {
+		setupComplete = ""
+	}
 	return windowsBootstrapHeaderPowerShell(cfg, publicKey, workRoot) + `
 $passwordPath = Join-Path $base "windows.password"
 $usernamePath = Join-Path $base "windows.username"
@@ -425,7 +429,7 @@ $enforceKeyAuth = $true
 Restart-Service sshd -Force
 git --version | Out-Null
 tar --version | Out-Null
-Set-Content -NoNewline -Encoding ASCII -Path $setupCompletePath -Value (Get-Date).ToString("o")
+` + setupComplete + `
 `
 }
 

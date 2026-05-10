@@ -7,8 +7,15 @@ import (
 	"time"
 )
 
-func bootstrapAWSWindowsDesktop(ctx context.Context, cfg Config, target *SSHTarget, publicKey string, stderr io.Writer) error {
-	if cfg.Provider != "aws" || cfg.TargetOS != targetWindows {
+func bootstrapManagedWindowsDesktop(ctx context.Context, cfg Config, target *SSHTarget, publicKey string, stderr io.Writer) error {
+	if cfg.TargetOS != targetWindows {
+		return waitForSSHReady(ctx, target, stderr, "bootstrap", bootstrapWaitTimeout(cfg))
+	}
+	if cfg.Provider == "azure" && cfg.WindowsMode == windowsModeNormal && cfg.Desktop {
+		bootstrapTarget := *target
+		return runWindowsDesktopBootstrapOverSSH(ctx, cfg, target, bootstrapTarget, publicKey, stderr)
+	}
+	if cfg.Provider != "aws" {
 		return waitForSSHReady(ctx, target, stderr, "bootstrap", bootstrapWaitTimeout(cfg))
 	}
 	bootstrapTarget := *target
@@ -19,6 +26,14 @@ func bootstrapAWSWindowsDesktop(ctx context.Context, cfg Config, target *SSHTarg
 		target.User = "Administrator"
 		return bootstrapAWSWindowsWSL2(ctx, cfg, target, bootstrapTarget, publicKey, stderr)
 	}
+	return runWindowsDesktopBootstrapOverSSH(ctx, cfg, target, bootstrapTarget, publicKey, stderr)
+}
+
+func bootstrapAWSWindowsDesktop(ctx context.Context, cfg Config, target *SSHTarget, publicKey string, stderr io.Writer) error {
+	return bootstrapManagedWindowsDesktop(ctx, cfg, target, publicKey, stderr)
+}
+
+func runWindowsDesktopBootstrapOverSSH(ctx context.Context, cfg Config, target *SSHTarget, bootstrapTarget SSHTarget, publicKey string, stderr io.Writer) error {
 	if err := waitForSSHReady(ctx, &bootstrapTarget, stderr, "windows openssh", 20*time.Minute); err != nil {
 		return err
 	}
@@ -38,6 +53,10 @@ exit $LASTEXITCODE`)
 
 func BootstrapAWSWindowsDesktop(ctx context.Context, cfg Config, target *SSHTarget, publicKey string, stderr io.Writer) error {
 	return bootstrapAWSWindowsDesktop(ctx, cfg, target, publicKey, stderr)
+}
+
+func BootstrapManagedWindowsDesktop(ctx context.Context, cfg Config, target *SSHTarget, publicKey string, stderr io.Writer) error {
+	return bootstrapManagedWindowsDesktop(ctx, cfg, target, publicKey, stderr)
 }
 
 func bootstrapAWSWindowsWSL2(ctx context.Context, cfg Config, target *SSHTarget, bootstrapTarget SSHTarget, publicKey string, stderr io.Writer) error {

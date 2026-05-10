@@ -67,9 +67,19 @@ func TestValidateProviderTargetAllowsAzureNativeWindowsOnly(t *testing.T) {
 	}
 }
 
-func TestValidateRequestedCapabilitiesRejectsAzureWindowsDesktop(t *testing.T) {
+func TestValidateRequestedCapabilitiesAllowsAzureWindowsDesktop(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Provider = "azure"
+	cfg.TargetOS = targetWindows
+	cfg.WindowsMode = windowsModeNormal
+	cfg.Desktop = true
+	if err := validateRequestedCapabilities(cfg); err != nil {
+		t.Fatalf("desktop err=%v", err)
+	}
+}
+
+func TestValidateRequestedCapabilitiesRejectsAzureWindowsUnsupportedCapabilities(t *testing.T) {
 	for name, mutate := range map[string]func(*Config){
-		"desktop":   func(cfg *Config) { cfg.Desktop = true },
 		"browser":   func(cfg *Config) { cfg.Browser = true },
 		"code":      func(cfg *Config) { cfg.Code = true },
 		"tailscale": func(cfg *Config) { cfg.Tailscale.Enabled = true },
@@ -81,7 +91,7 @@ func TestValidateRequestedCapabilitiesRejectsAzureWindowsDesktop(t *testing.T) {
 			cfg.WindowsMode = windowsModeNormal
 			mutate(&cfg)
 			err := validateRequestedCapabilities(cfg)
-			if err == nil || !strings.Contains(err.Error(), "SSH, sync, and run") {
+			if err == nil || !strings.Contains(err.Error(), "browser/code/tailscale") {
 				t.Fatalf("err=%v", err)
 			}
 		})

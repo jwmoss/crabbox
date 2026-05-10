@@ -70,7 +70,7 @@ through the Sprites API and reaches SSH through `sprite proxy`.
 | Provider | `run` | `warmup` | `ssh` | VNC/code | Crabbox sync | Provider sync |
 | --- | --- | --- | --- | --- | --- | --- |
 | AWS | yes | yes | yes | yes | yes | no |
-| Azure | yes | yes | yes | Linux VNC/code | yes | no |
+| Azure | yes | yes | yes | yes | yes | no |
 | Hetzner | yes | yes | yes | Linux VNC/code | yes | no |
 | Static SSH | yes | resolves host | yes | host-dependent | yes | no |
 | Blacksmith Testbox | yes | yes | no | no | no | yes |

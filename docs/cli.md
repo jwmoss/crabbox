@@ -183,8 +183,8 @@ Managed provider targets are intentionally narrow:
   Windows WSL2 (`--target windows --windows-mode wsl2`), and EC2 Mac
   (`--target macos`) when the Mac Dedicated Host is provided.
 - Azure supports Linux and native Windows (`--target windows --windows-mode
-  normal`). Azure Windows does not provide managed desktop, browser, WSL2, or
-  macOS targets.
+  normal`), including managed desktop/VNC on native Windows. Azure Windows does
+  not provide managed browser, code, WSL2, or macOS targets.
 - Existing macOS and Windows machines belong on `provider=ssh`.
 
 Use Tailscale as an optional network plane:

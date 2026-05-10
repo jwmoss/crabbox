@@ -71,10 +71,10 @@ export function leaseConfig(input: LeaseRequest): LeaseConfig {
   if (
     provider === "azure" &&
     target === "windows" &&
-    (input.desktop || input.browser || input.code || input.tailscale)
+    (input.browser || input.code || input.tailscale)
   ) {
     throw new Error(
-      "brokered azure target=windows currently supports SSH, sync, and run; desktop/browser/code/tailscale require Linux or AWS Windows where supported",
+      "brokered azure target=windows currently supports SSH, sync, run, and desktop/VNC; browser/code/tailscale require Linux or AWS Windows where supported",
     );
   }
   if (target === "macos") {

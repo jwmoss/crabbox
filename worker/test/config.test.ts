@@ -255,12 +255,14 @@ describe("lease config", () => {
     const config = leaseConfig({
       provider: "azure",
       target: "windows",
+      desktop: true,
       sshPublicKey: "ssh-rsa test",
     });
     expect(config.serverType).toBe("Standard_D16ads_v6");
     expect(config.workRoot).toBe("C:\\crabbox");
     expect(config.windowsMode).toBe("normal");
     expect(config.sshUser).toBe("crabbox");
+    expect(config.desktop).toBe(true);
     expect(() =>
       leaseConfig({
         provider: "azure",
@@ -269,7 +271,7 @@ describe("lease config", () => {
         sshPublicKey: "ssh-rsa test",
       }),
     ).toThrow("native Windows only");
-    for (const capability of ["desktop", "browser", "code", "tailscale"] as const) {
+    for (const capability of ["browser", "code", "tailscale"] as const) {
       expect(() =>
         leaseConfig({
           provider: "azure",
@@ -277,7 +279,7 @@ describe("lease config", () => {
           [capability]: true,
           sshPublicKey: "ssh-rsa test",
         }),
-      ).toThrow("SSH, sync, and run");
+      ).toThrow("browser/code/tailscale");
     }
   });
 
