@@ -29,6 +29,7 @@ func (testAzureProvider) Spec() ProviderSpec {
 		Targets: []TargetSpec{
 			{OS: targetLinux},
 			{OS: targetWindows, WindowsMode: windowsModeNormal},
+			{OS: targetWindows, WindowsMode: windowsModeWSL2},
 		},
 		Features:    FeatureSet{FeatureSSH, FeatureCrabboxSync, FeatureCleanup, FeatureDesktop, FeatureBrowser, FeatureCode, FeatureTailscale},
 		Coordinator: CoordinatorSupported,

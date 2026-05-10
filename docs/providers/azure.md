@@ -6,19 +6,19 @@ Read when:
 - debugging Azure VM capacity, quotas, images, or SSH readiness;
 - changing `internal/providers/azure` or the direct Azure provisioning code.
 
-Azure is a managed provider for Linux and native Windows SSH leases. Azure
+Azure is a managed provider for Linux, native Windows, and Windows WSL2 leases. Azure
 provisions the VM, public IP, NIC, and OS disk, then Crabbox owns SSH
-readiness, optional desktop/VNC bootstrap, sync, command execution, results,
-and cleanup.
+readiness, optional desktop/VNC or WSL2 bootstrap, sync, command execution,
+results, and cleanup.
 
 ## When To Use
 
 Use Azure when the team's cloud capacity lives in an Azure subscription, or
 when Microsoft tooling, Entra ID, or Azure-specific networking constraints
 make AWS or Hetzner inappropriate. Use Hetzner for cheaper Linux-only
-capacity and AWS for Windows WSL2 or macOS targets.
+capacity and AWS for macOS targets.
 
-Azure supports direct mode and brokered Linux/native Windows leases. Direct
+Azure supports direct mode and brokered Linux/native Windows/WSL2 leases. Direct
 mode uses local Azure credentials. Brokered mode uses the operator-owned
 Azure service principal configured on the Worker.
 
@@ -29,6 +29,7 @@ crabbox warmup --provider azure --class beast
 crabbox run --provider azure --class standard -- pnpm test
 crabbox warmup --provider azure --target windows --class standard
 crabbox warmup --provider azure --target windows --desktop --class standard
+crabbox warmup --provider azure --target windows --windows-mode wsl2 --class standard
 crabbox warmup --provider azure --desktop --browser
 crabbox ssh --provider azure --id blue-lobster
 crabbox stop --provider azure blue-lobster
@@ -145,8 +146,12 @@ See [Authenticate Go apps to Azure services with service principals](https://lea
    desktop bootstrap over SSH. That installs TightVNC, configures the
    generated `crabbox` Windows login, enables auto-logon, reboots once, and
    waits for SSH/VNC readiness.
-10. Let core sync and run over SSH.
-11. On release/cleanup, cascade-delete VM → NIC → public IP → OS disk. The
+10. When `windows.mode=wsl2` is requested, run the shared Windows WSL2
+   bootstrap over SSH. That enables WSL/VirtualMachinePlatform/HypervisorPlatform,
+   reboots as needed, imports Ubuntu, and waits for the Linux-side
+   `crabbox-ready` check.
+11. Let core sync and run over SSH.
+12. On release/cleanup, cascade-delete VM → NIC → public IP → OS disk. The
    shared infra remains.
 
 ## Classes
@@ -160,7 +165,7 @@ large     Standard_D96ads_v6, Standard_D96ds_v6, Standard_D96ads_v5, Standard_D9
 beast     Standard_D192ds_v6, Standard_D128ds_v6, then D/F 96-vCPU and 64-vCPU fallbacks
 ```
 
-Default native Windows SKUs:
+Default native Windows and WSL2 SKUs:
 
 ```text
 standard  Standard_D2ads_v6, Standard_D2ds_v6, Standard_D2ads_v5, Standard_D2ds_v5, then Standard_D2as_v6
@@ -177,18 +182,20 @@ rejects a SKU for capacity or quota
 The default Linux candidates mirror the AWS Linux class table's vCPU scale.
 The default Windows candidates mirror the AWS native Windows class table's
 vCPU scale. Azure native Windows support covers SSH, sync, run, and optional
-desktop/VNC; Windows WSL2 and macOS remain AWS or static-SSH targets.
+desktop/VNC. Azure WSL2 support covers SSH, sync, run, and actions hydration
+through the POSIX WSL contract.
 
 ## Capabilities
 
 - SSH: yes.
 - Crabbox sync: yes.
 - Native Windows: yes for SSH, sync, run, and desktop/VNC.
+- Windows WSL2: yes for SSH, sync, run, and actions hydration.
 - Desktop: Linux and native Windows.
 - Browser / code: Linux only on Azure.
 - Tailscale: Linux managed leases.
-- Actions hydration: yes, Linux SSH leases.
-- Coordinator: yes, brokered Linux/native Windows leases.
+- Actions hydration: yes, Linux and Windows WSL2 leases.
+- Coordinator: yes, brokered Linux/native Windows/WSL2 leases.
 
 ## Gotchas
 
@@ -215,8 +222,8 @@ desktop/VNC; Windows WSL2 and macOS remain AWS or static-SSH targets.
 - Azure native Windows uses Custom Script Extension because Windows custom
   data is saved to disk but not executed by Azure provisioning. Keep that
   extension path non-rebooting; Windows desktop/VNC setup runs later over SSH.
-- Azure does not provide managed Windows WSL2 or macOS through this provider.
-  Use AWS or `provider: ssh` for those targets.
+- Azure does not provide managed macOS through this provider. Use AWS or
+  `provider: ssh` for macOS targets.
 - Direct-mode cleanup is best effort. Use `crabbox cleanup --provider azure`
   to sweep expired direct leases.
 

@@ -11,6 +11,16 @@ func bootstrapManagedWindowsDesktop(ctx context.Context, cfg Config, target *SSH
 	if cfg.TargetOS != targetWindows {
 		return waitForSSHReady(ctx, target, stderr, "bootstrap", bootstrapWaitTimeout(cfg))
 	}
+	if cfg.WindowsMode == windowsModeWSL2 {
+		bootstrapTarget := *target
+		bootstrapTarget.WindowsMode = windowsModeNormal
+		bootstrapTarget.ReadyCheck = powershellCommand(`$PSVersionTable.PSVersion | Out-Null`)
+		if cfg.Provider == "aws" {
+			bootstrapTarget.User = "Administrator"
+			target.User = "Administrator"
+		}
+		return bootstrapManagedWindowsWSL2(ctx, cfg, target, bootstrapTarget, publicKey, stderr)
+	}
 	if cfg.Provider == "azure" && cfg.WindowsMode == windowsModeNormal && cfg.Desktop {
 		bootstrapTarget := *target
 		return runWindowsDesktopBootstrapOverSSH(ctx, cfg, target, bootstrapTarget, publicKey, stderr)
@@ -22,10 +32,6 @@ func bootstrapManagedWindowsDesktop(ctx context.Context, cfg Config, target *SSH
 	bootstrapTarget.User = "Administrator"
 	bootstrapTarget.WindowsMode = windowsModeNormal
 	bootstrapTarget.ReadyCheck = powershellCommand(`$PSVersionTable.PSVersion | Out-Null`)
-	if cfg.WindowsMode == windowsModeWSL2 {
-		target.User = "Administrator"
-		return bootstrapAWSWindowsWSL2(ctx, cfg, target, bootstrapTarget, publicKey, stderr)
-	}
 	return runWindowsDesktopBootstrapOverSSH(ctx, cfg, target, bootstrapTarget, publicKey, stderr)
 }
 
@@ -88,7 +94,7 @@ func BootstrapManagedWindowsDesktop(ctx context.Context, cfg Config, target *SSH
 	return bootstrapManagedWindowsDesktop(ctx, cfg, target, publicKey, stderr)
 }
 
-func bootstrapAWSWindowsWSL2(ctx context.Context, cfg Config, target *SSHTarget, bootstrapTarget SSHTarget, publicKey string, stderr io.Writer) error {
+func bootstrapManagedWindowsWSL2(ctx context.Context, cfg Config, target *SSHTarget, bootstrapTarget SSHTarget, publicKey string, stderr io.Writer) error {
 	for attempt := 1; attempt <= 5; attempt++ {
 		if err := waitForSSHReady(ctx, &bootstrapTarget, stderr, "windows openssh", 20*time.Minute); err != nil {
 			return err

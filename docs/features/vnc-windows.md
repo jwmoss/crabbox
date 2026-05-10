@@ -74,18 +74,19 @@ Windows account and is not stored in coordinator history.
 
 ## WSL2
 
-Managed AWS WSL2 leases are Windows instances with nested virtualization
-enabled and an Ubuntu rootfs imported into WSL. Commands and sync use the POSIX
-WSL contract:
+Managed AWS and Azure WSL2 leases are Windows instances with nested
+virtualization enabled and an Ubuntu rootfs imported into WSL. Commands and
+sync use the POSIX WSL contract:
 
 ```sh
 crabbox warmup --provider aws --target windows --windows-mode wsl2
+crabbox warmup --provider azure --target windows --windows-mode wsl2
 crabbox actions hydrate --id blue-lobster
 crabbox run --id blue-lobster -- pnpm test
 ```
 
 Use native Windows mode when you need the Windows desktop. Use WSL2 when you
-need Linux tooling on Windows-capable AWS instance families.
+need Linux tooling on Windows-capable nested-virtualization VM families.
 
 OpenClaw maintainers can run the full OpenClaw test suite on a fresh WSL2 box
 with:

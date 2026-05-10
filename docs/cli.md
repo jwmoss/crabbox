@@ -167,10 +167,11 @@ crabbox run --provider ssh --target windows --windows-mode normal --static-host 
 crabbox run --provider ssh --target windows --windows-mode wsl2 --static-host win-dev.local -- pnpm test
 ```
 
-Create managed AWS desktop boxes:
+Create managed cloud desktop boxes:
 
 ```sh
 crabbox warmup --provider aws --target windows --desktop
+crabbox warmup --provider azure --target windows --desktop
 CRABBOX_AWS_MAC_HOST_ID=h-... crabbox warmup --provider aws --target macos --desktop --market on-demand
 crabbox vnc --id blue-lobster
 crabbox screenshot --id blue-lobster --output desktop.png
@@ -182,9 +183,10 @@ Managed provider targets are intentionally narrow:
 - AWS supports Linux, native Windows (`--target windows --windows-mode normal`),
   Windows WSL2 (`--target windows --windows-mode wsl2`), and EC2 Mac
   (`--target macos`) when the Mac Dedicated Host is provided.
-- Azure supports Linux and native Windows (`--target windows --windows-mode
-  normal`), including managed desktop/VNC on native Windows. Azure Windows does
-  not provide managed browser, code, WSL2, or macOS targets.
+- Azure supports Linux, native Windows (`--target windows --windows-mode
+  normal`), and Windows WSL2 (`--target windows --windows-mode wsl2`),
+  including managed desktop/VNC on native Windows. Azure does not provide
+  managed browser, code, or macOS targets.
 - Existing macOS and Windows machines belong on `provider=ssh`.
 
 Use Tailscale as an optional network plane:
