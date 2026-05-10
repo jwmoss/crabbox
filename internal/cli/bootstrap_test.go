@@ -232,14 +232,17 @@ func TestAWSUserDataWindowsProfile(t *testing.T) {
 		"VALUE_OF_ALLOWLOOPBACK=1",
 		"CrabboxUserVNC",
 		"crabbox-user-vnc.cmd",
+		`AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup`,
 		"start-user-vnc.ps1",
 		"Set-TightVNCBinaryValue",
 		`reg.exe add "HKCU\Software\TightVNC\Server"`,
 		`$hex = -join ($bytes | ForEach-Object { $_.ToString("X2") })`,
 		"-run",
 		"NewNetworkWindowOff",
-		"Set-Service -StartupType Manual",
-		"Start-Service -Name tvnserver",
+		"DoNotOpenServerManagerAtLogon",
+		"/SC ONLOGON",
+		"Set-Service -StartupType Disabled",
+		"Stop-Service -Name tvnserver",
 		"New-CrabboxPassword",
 		"${userSID}:F",
 		`C:\ProgramData\crabbox\vnc.password`,
@@ -250,6 +253,15 @@ func TestAWSUserDataWindowsProfile(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("windows user data missing %q", want)
 		}
+	}
+	if strings.Contains(got, "/SC ONCE") {
+		t.Fatalf("windows user data should not schedule user VNC as a one-shot task")
+	}
+	if strings.Contains(got, "Set-Service -StartupType Manual") {
+		t.Fatalf("windows user data should not keep the service VNC fallback enabled")
+	}
+	if strings.Contains(got, "Start-Service -Name tvnserver") {
+		t.Fatalf("windows user data should not start service-session VNC")
 	}
 }
 

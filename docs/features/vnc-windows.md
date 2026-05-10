@@ -28,11 +28,12 @@ Bootstrap flow:
 - Crabbox installs Git for Windows and TightVNC.
 - Crabbox creates a local `crabbox` administrator.
 - Windows auto-logon starts a visible console session for that user.
-- TightVNC runs in that logged-in user session, with its HKCU password values
-  copied from the service configuration during startup.
-- The TightVNC service is also left startable and running as a fallback so
-  screenshots and WebVNC can connect even if the user-session startup task is
-  delayed.
+- TightVNC runs in that logged-in user session through the `CrabboxUserVNC`
+  logon scheduled task, with its HKCU password values copied from the service
+  configuration during startup.
+- The TightVNC service is disabled after seeding the per-user configuration, so
+  screenshots and WebVNC target the visible console session instead of the
+  service session.
 - The Windows first-network-discovery flyout is disabled during bootstrap so it
   does not cover screenshots.
 - The generated password is stored at

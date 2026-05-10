@@ -48,7 +48,36 @@ exit $LASTEXITCODE`)
 	if err != nil {
 		fmt.Fprintf(stderr, "warning: Windows bootstrap SSH command ended before completion; waiting for reboot/ready state: %v\n", err)
 	}
-	return waitForSSHReady(ctx, target, stderr, "bootstrap", bootstrapWaitTimeout(cfg))
+	if err := waitForSSHReady(ctx, target, stderr, "bootstrap", bootstrapWaitTimeout(cfg)); err != nil {
+		return err
+	}
+	if cfg.Desktop && cfg.WindowsMode == windowsModeNormal {
+		return waitForManagedWindowsLoopbackVNC(ctx, target, stderr, 5*time.Minute)
+	}
+	return nil
+}
+
+func waitForManagedWindowsLoopbackVNC(ctx context.Context, target *SSHTarget, stderr io.Writer, timeout time.Duration) error {
+	fmt.Fprintln(stderr, "waiting for Windows desktop VNC on 127.0.0.1:5900")
+	deadline := time.Now().Add(timeout)
+	for {
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
+		for _, port := range sshPortCandidates(target.Port, target.FallbackPorts) {
+			probe := *target
+			probe.Port = port
+			if err := probeLoopbackVNC(ctx, probe, "5", "1"); err == nil {
+				target.Port = port
+				fmt.Fprintln(stderr, "Windows desktop VNC ready")
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return exit(5, "managed Windows desktop did not expose VNC on 127.0.0.1:5900")
+		}
+		time.Sleep(5 * time.Second)
+	}
 }
 
 func BootstrapAWSWindowsDesktop(ctx context.Context, cfg Config, target *SSHTarget, publicKey string, stderr io.Writer) error {
