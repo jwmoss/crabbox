@@ -118,7 +118,9 @@ provider labels and `crabbox cleanup`.
 - During capacity pressure, prefer `standard` or `fast` plus multiple
   `CRABBOX_CAPACITY_REGIONS`; `beast` starts at 48xlarge candidates and can
   consume 192 vCPUs per request.
-- Windows WSL2 needs nested virtualization instance families.
+- Windows WSL2 needs nested virtualization instance families. If you pass an
+  exact `--type`, use the listed C8i/M8i/M8i Flex/R8i families; M7/T3-style
+  Windows types are rejected before leasing.
 - EC2 Mac needs an explicit Dedicated Host id.
 - VNC stays behind SSH tunnels; do not expose VNC ports directly.
 

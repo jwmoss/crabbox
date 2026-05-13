@@ -618,6 +618,16 @@ func awsLaunchCandidates(cfg Config) []string {
 	return appendUniqueStrings([]string{cfg.ServerType}, append(awsInstanceTypeCandidatesForConfig(cfg), fallback)...)
 }
 
+func awsInstanceTypeSupportsNestedVirtualization(instanceType string) bool {
+	family, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(instanceType)), ".")
+	switch family {
+	case "c8i", "m8i", "m8i-flex", "r8i":
+		return true
+	default:
+		return false
+	}
+}
+
 func applyAWSRunInstanceTargetOptions(input *ec2.RunInstancesInput, cfg Config) {
 	if cfg.TargetOS == targetWindows && cfg.WindowsMode == windowsModeWSL2 {
 		input.CpuOptions = &types.CpuOptionsRequest{

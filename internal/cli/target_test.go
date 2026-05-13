@@ -51,6 +51,20 @@ func TestValidateProviderTargetAllowsAWSNativeWindows(t *testing.T) {
 	}
 }
 
+func TestValidateProviderTargetRejectsAWSWSL2ExactTypeWithoutNestedVirtualization(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Provider = "aws"
+	cfg.TargetOS = targetWindows
+	cfg.WindowsMode = windowsModeWSL2
+	cfg.ServerType = "m7i.xlarge"
+	cfg.ServerTypeExplicit = true
+
+	err := validateProviderTarget(cfg)
+	if err == nil || !strings.Contains(err.Error(), "nested virtualization") || !strings.Contains(err.Error(), "m8i.4xlarge") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestValidateProviderTargetAllowsAzureWindowsModes(t *testing.T) {
 	for _, mode := range []string{windowsModeNormal, windowsModeWSL2} {
 		t.Run(mode, func(t *testing.T) {

@@ -90,6 +90,10 @@ AWS macOS
 all       mac2.metal unless `--type` is set
 ```
 
+Exact AWS Windows WSL2 `--type` values must come from nested-virtualization
+families. Crabbox rejects unsupported families such as M7 or T3 before it asks
+AWS/coordinator for a lease; omit `--type` to let class fallback choose.
+
 ## Broker Secrets And Env
 
 Worker secrets:
