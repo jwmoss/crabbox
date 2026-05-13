@@ -64,6 +64,14 @@ Prerequisites on the laptop: `git`, `ssh`, `ssh-keygen`, `rsync`, `curl`.
 
 ## Quick start
 
+The hosted broker at `https://crabbox.openclaw.ai` is restricted to the
+configured GitHub org/team. If `crabbox login` completes GitHub OAuth and then
+returns an org-membership error, use direct-provider mode for a personal cloud
+account or self-host the Worker broker with your own provider credentials and
+spend caps. See [Getting started](docs/getting-started.md#hosted-broker-access)
+and [Infrastructure](docs/infrastructure.md#self-hosted-broker-minimum) for the
+setup paths.
+
 ```sh
 # log in once per machine (stores a broker token in user config)
 crabbox login

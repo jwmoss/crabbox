@@ -293,6 +293,53 @@ all       mac2.metal unless `--type` is set
 
 Profiles choose a default class, and commands can override with `--class`.
 
+## Self-Hosted Broker Minimum
+
+Use this path when your users are not allowed onto the hosted
+`https://crabbox.openclaw.ai` broker but you still want broker-owned provider
+credentials, coordinator cleanup, active-lease limits, monthly spend caps, and
+`crabbox usage`.
+
+Minimum Cloudflare setup:
+
+- a Cloudflare account with Workers and Durable Objects enabled;
+- a Worker route or workers.dev URL for the coordinator;
+- the Durable Object binding from `worker/wrangler.jsonc`;
+- Worker secrets for at least one brokered provider, for example Hetzner or AWS;
+- budget limits sized for the installation before inviting users.
+
+Recommended small-installation limits:
+
+```text
+CRABBOX_MAX_ACTIVE_LEASES=2
+CRABBOX_MAX_ACTIVE_LEASES_PER_OWNER=1
+CRABBOX_MAX_MONTHLY_USD=25
+CRABBOX_MAX_MONTHLY_USD_PER_OWNER=10
+```
+
+Required auth choice:
+
+- Browser login: create a GitHub OAuth app for your coordinator callback URL and
+  set `CRABBOX_GITHUB_CLIENT_ID`, `CRABBOX_GITHUB_CLIENT_SECRET`,
+  `CRABBOX_SESSION_SECRET`, and `CRABBOX_GITHUB_ALLOWED_ORG` or
+  `CRABBOX_GITHUB_ALLOWED_ORGS`.
+- Shared-token automation: set `CRABBOX_SHARED_TOKEN` and
+  `CRABBOX_SHARED_OWNER`; GitHub OAuth is not required if every caller uses
+  `crabbox login --url <your-url> --token-stdin`.
+
+Provider secrets stay in the Worker, not in repo config. For AWS, start with
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and conservative AWS IAM
+permissions for the regions/classes you intend to use. For Hetzner, set
+`HETZNER_TOKEN` for the project that owns the disposable runners.
+
+After deployment, users point the CLI at the broker:
+
+```sh
+crabbox login --url https://<your-coordinator-host> --provider aws
+crabbox doctor
+crabbox usage
+```
+
 ## Deployment
 
 Worker source lives in `worker/`. Build and deploy with the package scripts plus Wrangler:

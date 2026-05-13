@@ -9,8 +9,12 @@
 
 ### Changed
 
+- Clarified hosted broker access for non-allowlisted users and documented the minimum self-hosted broker setup. Thanks @alan-mathison-enigma.
+
 ### Fixed
 
+- Fixed AWS broker security-group maintenance so stale Crabbox-owned SSH ingress rules are pruned before adding the current source CIDRs. Thanks @obviyus.
+- Fixed Proxmox VM bootstrap to wait for the guest IP and bootstrap over SSH after clone/start, avoiding fragile guest-agent exec behavior. Thanks @mine-13-zoom.
 - Fixed AWS Windows WSL2 exact `--type` requests so instance families without nested virtualization fail before leasing with a targeted repair hint.
 - Fixed coordinator-backed AWS acquisition so readiness failures delete the just-created instance before retrying, while CLI retries still require an explicit cleanup signal.
 - Fixed `crabbox run --preflight --preflight-tools none` so it prints only the workspace summary without running remote probes.
