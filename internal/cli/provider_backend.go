@@ -221,6 +221,8 @@ type RunRequest struct {
 	ShellMode       bool
 	ChecksumSync    bool
 	ForceSyncLarge  bool
+	FullResync      bool
+	EnvHelper       string
 	CaptureStdout   string
 	CaptureStderr   string
 	CaptureOnFail   bool
@@ -454,6 +456,12 @@ func rejectDelegatedSyncOptionsForSpec(spec ProviderSpec, req RunRequest) error 
 	}
 	if req.ForceSyncLarge && !archiveSync {
 		return exit(2, "%s delegates sync; --force-sync-large is not supported", provider)
+	}
+	if req.FullResync {
+		return exit(2, "%s delegates sync; --full-resync is not supported", provider)
+	}
+	if req.EnvHelper != "" {
+		return exit(2, "%s delegates run execution; --env-helper is not supported", provider)
 	}
 	if req.CaptureStdout != "" {
 		return exit(2, "%s delegates run execution; --capture-stdout is not supported", provider)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -205,6 +206,144 @@ func uploadRunEnvProfile(ctx context.Context, target SSHTarget, workdir, remoteP
 	return nil
 }
 
+func runEnvProfilePath(name string) string {
+	return ".crabbox/env/" + safeCaptureName(name) + ".env"
+}
+
+func runEnvHelperPath(name string) string {
+	return ".crabbox/env/" + safeCaptureName(name)
+}
+
+func safeEnvHelperName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", exit(2, "--env-helper requires a name")
+	}
+	if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+		return "", exit(2, "--env-helper must be a simple name, not a path")
+	}
+	safe := safeCaptureName(name)
+	if safe == "" || safe != name {
+		return "", exit(2, "--env-helper must contain only letters, numbers, dash, or underscore")
+	}
+	return safe, nil
+}
+
+func probeRunEnvProfile(ctx context.Context, target SSHTarget, workdir, remotePath string, env map[string]string, stderr io.Writer) error {
+	if len(env) == 0 {
+		return nil
+	}
+	names := sortedEnvNames(env)
+	remote := remoteProbeRunEnvProfileCommand(workdir, remotePath, names)
+	if isWindowsNativeTarget(target) {
+		remote = windowsRemoteProbeRunEnvProfileCommand(workdir, remotePath, names)
+	}
+	out, err := runSSHOutput(ctx, target, remote)
+	if err != nil {
+		return exit(7, "probe env profile %s: %v", remotePath, err)
+	}
+	entries := splitNonEmptyLines(out)
+	if len(entries) == 0 {
+		return exit(7, "probe env profile %s: empty probe output", remotePath)
+	}
+	fmt.Fprintf(stderr, "env profile remote=%s vars=%s\n", remotePath, strings.Join(entries, ","))
+	return nil
+}
+
+func uploadRunEnvHelper(ctx context.Context, target SSHTarget, workdir, helperPath, profilePath string) error {
+	if err := validateRunEnvHelperTarget(target, helperPath); err != nil {
+		return err
+	}
+	remote := remoteUploadRunEnvHelperCommand(workdir, helperPath)
+	input := formatRunEnvHelper(profilePath)
+	var stdout, stderr bytes.Buffer
+	if err := runSSHInput(ctx, target, remote, strings.NewReader(input), &stdout, &stderr); err != nil {
+		detail := trimFailureDetail(strings.TrimSpace(stdout.String() + "\n" + stderr.String()))
+		if detail != "" {
+			return exit(7, "upload env helper %s: %v: %s", helperPath, err, detail)
+		}
+		return exit(7, "upload env helper %s: %v", helperPath, err)
+	}
+	return nil
+}
+
+func validateRunEnvHelperTarget(target SSHTarget, helperPath string) error {
+	if strings.TrimSpace(helperPath) == "" {
+		return nil
+	}
+	if isWindowsNativeTarget(target) {
+		return exit(2, "--env-helper is not supported for native Windows targets yet")
+	}
+	return nil
+}
+
+func remoteProbeRunEnvProfileCommand(workdir, remotePath string, names []string) string {
+	var b strings.Builder
+	b.WriteString("set -eu\ncd ")
+	b.WriteString(shellQuote(workdir))
+	b.WriteByte('\n')
+	b.WriteString("test -f ")
+	b.WriteString(shellQuote(remotePath))
+	b.WriteByte('\n')
+	b.WriteString(". ")
+	b.WriteString(shellQuote(remotePath))
+	b.WriteByte('\n')
+	for _, name := range names {
+		if !validEnvName(name) {
+			continue
+		}
+		secret := "false"
+		if envNameLooksSecret(name) {
+			secret = "true"
+		}
+		b.WriteString("if [ \"${")
+		b.WriteString(name)
+		b.WriteString("+set}\" = set ]; then v=${")
+		b.WriteString(name)
+		b.WriteString("}; if [ -z \"$v\" ]; then printf '%s=empty")
+		if secret == "true" {
+			b.WriteString(" len=0 secret=true")
+		}
+		b.WriteString("\\n' ")
+		b.WriteString(shellQuote(name))
+		b.WriteString("; else printf '%s=set")
+		if secret == "true" {
+			b.WriteString(" len=%s secret=true")
+		}
+		b.WriteString("\\n' ")
+		b.WriteString(shellQuote(name))
+		if secret == "true" {
+			b.WriteString(" \"${#v}\"")
+		}
+		b.WriteString("; fi; else printf '%s=missing\\n' ")
+		b.WriteString(shellQuote(name))
+		b.WriteString("; fi\n")
+	}
+	return "bash -lc " + shellQuote(b.String())
+}
+
+func remoteUploadRunEnvHelperCommand(workdir, remotePath string) string {
+	dir := shellDir(remotePath)
+	script := "set -eu\n" +
+		"cd " + shellQuote(workdir) + "\n" +
+		"mkdir -p " + shellQuote(dir) + "\n" +
+		"umask 077\n" +
+		"cat > " + shellQuote(remotePath) + "\n" +
+		"chmod 700 " + shellQuote(remotePath) + "\n"
+	return "bash -lc " + shellQuote(script)
+}
+
+func formatRunEnvHelper(profilePath string) string {
+	return "#!/usr/bin/env bash\n" +
+		"set -e\n" +
+		"cd \"$(dirname \"$0\")/../..\"\n" +
+		"profile=" + shellQuote(profilePath) + "\n" +
+		"if [ ! -f \"$profile\" ]; then echo \"crabbox env helper: missing $profile\" >&2; exit 127; fi\n" +
+		". \"$profile\"\n" +
+		"if [ \"$#\" -eq 0 ]; then echo \"usage: $0 <command> [args...]\" >&2; exit 64; fi\n" +
+		"exec \"$@\"\n"
+}
+
 func remoteUploadRunEnvProfileCommand(workdir, remotePath string) string {
 	dir := shellDir(remotePath)
 	script := "set -eu\n" +
@@ -229,11 +368,7 @@ func removeRunEnvProfileCommand(target SSHTarget, workdir, remotePath string) st
 }
 
 func formatShellEnvFile(env map[string]string) string {
-	keys := make([]string, 0, len(env))
-	for key := range env {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := sortedEnvNames(env)
 	var b strings.Builder
 	for _, key := range keys {
 		if !validEnvName(key) {
@@ -245,11 +380,7 @@ func formatShellEnvFile(env map[string]string) string {
 }
 
 func formatPlainEnvFile(env map[string]string) string {
-	keys := make([]string, 0, len(env))
-	for key := range env {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := sortedEnvNames(env)
 	var b strings.Builder
 	for _, key := range keys {
 		if !validEnvName(key) {
@@ -270,6 +401,71 @@ Set-Location -LiteralPath ` + psQuote(workdir) + `
 Remove-Item -LiteralPath ` + psQuote(remotePath) + ` -Force -ErrorAction SilentlyContinue
 `
 	return powershellCommand(script)
+}
+
+func windowsRemoteProbeRunEnvProfileCommand(workdir, remotePath string, names []string) string {
+	script := `$ErrorActionPreference = "Stop"
+Set-Location -LiteralPath ` + psQuote(workdir) + `
+$profilePath = ` + psQuote(remotePath) + `
+if (-not (Test-Path -LiteralPath $profilePath)) { throw "missing env profile $profilePath" }
+Get-Content -Encoding UTF8 -LiteralPath $profilePath | ForEach-Object {
+  $line = $_
+  if ($line -match '^([^=]+)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+  }
+}
+`
+	for _, name := range names {
+		if !validEnvName(name) {
+			continue
+		}
+		secret := envNameLooksSecret(name)
+		script += `$value = [Environment]::GetEnvironmentVariable(` + psQuote(name) + `, 'Process')
+if ($null -eq $value) {
+  Write-Output ` + psQuote(name+"=missing") + `
+} elseif ($value -eq "") {
+  Write-Output ` + psQuote(name+"=empty"+secretSuffix(secret, 0)) + `
+} else {
+`
+		if secret {
+			script += `  Write-Output (` + psQuote(name+"=set len=") + ` + $value.Length + ` + psQuote(" secret=true") + `)
+`
+		} else {
+			script += `  Write-Output ` + psQuote(name+"=set") + `
+`
+		}
+		script += `}
+`
+	}
+	return powershellCommand(script)
+}
+
+func secretSuffix(secret bool, length int) string {
+	if !secret {
+		return ""
+	}
+	return fmt.Sprintf(" len=%d secret=true", length)
+}
+
+func sortedEnvNames(env map[string]string) []string {
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func splitNonEmptyLines(text string) []string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 func shellDir(path string) string {

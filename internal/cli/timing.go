@@ -91,6 +91,7 @@ func syncTimingPhases(steps syncStepTimings) []timingPhase {
 	appendDuration("mkdir", steps.mkdir)
 	appendDuration("manifest", steps.manifest)
 	appendDuration("preflight", steps.preflight)
+	appendDuration("reset", steps.reset)
 	appendDuration("fingerprint", steps.fingerprintLocal)
 	appendDuration("fingerprint_remote", steps.fingerprintRemote)
 	appendDuration("git_seed", steps.gitSeed)

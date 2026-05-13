@@ -98,6 +98,26 @@ func TestRemoteCommandSourcesMultipleEnvFilesWithoutInlineSecret(t *testing.T) {
 	}
 }
 
+func TestRemoteResetWorkdirRemovesExistingCheckout(t *testing.T) {
+	got := remoteResetWorkdir("/work/crabbox/cbx_1/repo")
+	for _, want := range []string{
+		"rm -rf --",
+		"/work/crabbox/cbx_1/repo",
+		"mkdir -p",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("remoteResetWorkdir() missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestSSHWaitNextActionMentionsFullResyncBeforeSync(t *testing.T) {
+	got := sshWaitNextAction("before sync")
+	if !strings.Contains(got, "--full-resync") || !strings.Contains(got, "fresh lease") {
+		t.Fatalf("sshWaitNextAction(before sync)=%q", got)
+	}
+}
+
 func TestWindowsNativeRemoteCommandUsesPowerShell(t *testing.T) {
 	got := windowsRemoteCommandWithEnvFile(`C:\crabbox\cbx\repo`, map[string]string{"CI": "1"}, "", []string{"pwsh", "-NoProfile", "-Command", "echo ok"})
 	if !strings.HasPrefix(got, powerShellEncodedCommandPrefix) {
@@ -140,6 +160,83 @@ func TestWindowsNativeRemoteShellRunsScriptDirectly(t *testing.T) {
 	}
 	if strings.Contains(decoded, `& 'powershell.exe'`) {
 		t.Fatalf("windows shell command should not spawn nested powershell: %q", decoded)
+	}
+}
+
+func TestWindowsPruneSeededSyncManifestDeletesSeededExtras(t *testing.T) {
+	got := windowsPruneSeededSyncManifest(`C:\crabbox\cbx\repo`)
+	decoded := decodePowerShellCommand(t, got)
+	for _, want := range []string{
+		`git -c core.quotePath=false ls-files`,
+		`Read-NulList $manifestBytes`,
+		`Read-NulList $deletedBytes`,
+		`-not $wanted.ContainsKey($rel)`,
+		`$deleted.ContainsKey($rel)`,
+		`Remove-SafeRepoPath $rel`,
+	} {
+		if !strings.Contains(decoded, want) {
+			t.Fatalf("windows prune command missing %q in %q", want, decoded)
+		}
+	}
+}
+
+func TestSyncWindowsNativeFullResyncPrunesAfterGitSeed(t *testing.T) {
+	dir := t.TempDir()
+	sshPath := filepath.Join(dir, "ssh")
+	logPath := filepath.Join(dir, "ssh.log")
+	script := `#!/bin/sh
+printf 'ssh\n' >> "$CRABBOX_FAKE_SSH_LOG"
+cat >/dev/null
+exit 0
+`
+	if err := os.WriteFile(sshPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CRABBOX_FAKE_SSH_LOG", logPath)
+
+	repoRoot := filepath.Join(dir, "repo")
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoRoot
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit("init", "-q")
+	runGit("config", "user.email", "alice@example.com")
+	runGit("config", "user.name", "Alice")
+	mustWriteTestFile(t, filepath.Join(repoRoot, "keep.txt"), "keep")
+	mustWriteTestFile(t, filepath.Join(repoRoot, "stale.txt"), "stale")
+	runGit("add", "keep.txt", "stale.txt")
+	runGit("commit", "-q", "-m", "seed")
+	head := gitOutput(repoRoot, "rev-parse", "HEAD")
+	runGit("update-ref", "refs/remotes/origin/main", head)
+	if err := os.Remove(filepath.Join(repoRoot, "stale.txt")); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := syncManifest(repoRoot, configuredExcludes(baseConfig()))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := baseConfig()
+	cfg.Sync.Delete = false
+	target := SSHTarget{User: "crabbox", Host: "203.0.113.10", Port: "22", TargetOS: targetWindows, WindowsMode: windowsModeNormal}
+	repo := Repo{Root: repoRoot, RemoteURL: "https://example.test/repo.git", Head: head}
+	if err := syncWindowsNative(context.Background(), target, repo, cfg, `C:\crabbox\cbx\repo`, manifest, io.Discard, io.Discard, rsyncOptions{FullResync: true}); err != nil {
+		t.Fatal(err)
+	}
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.Count(string(logData), "ssh\n"), 4; got != want {
+		t.Fatalf("ssh calls=%d want %d; log:\n%s", got, want, logData)
 	}
 }
 

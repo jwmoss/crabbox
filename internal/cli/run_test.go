@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +16,68 @@ import (
 	"testing"
 	"time"
 )
+
+func init() {
+	RegisterProvider(windowsEnvHelperTestProvider{})
+}
+
+type windowsEnvHelperTestProvider struct{}
+
+func (windowsEnvHelperTestProvider) Name() string { return "windows-env-helper-test" }
+func (windowsEnvHelperTestProvider) Aliases() []string {
+	return nil
+}
+func (windowsEnvHelperTestProvider) Spec() ProviderSpec {
+	return ProviderSpec{
+		Name: "windows-env-helper-test",
+		Kind: ProviderKindSSHLease,
+		Targets: []TargetSpec{
+			{OS: targetWindows, WindowsMode: windowsModeNormal},
+		},
+		Features:    FeatureSet{FeatureSSH, FeatureCrabboxSync},
+		Coordinator: CoordinatorNever,
+	}
+}
+func (windowsEnvHelperTestProvider) RegisterFlags(*flag.FlagSet, Config) any {
+	return noProviderFlags{}
+}
+func (windowsEnvHelperTestProvider) ApplyFlags(*Config, *flag.FlagSet, any) error {
+	return nil
+}
+func (p windowsEnvHelperTestProvider) Configure(Config, Runtime) (Backend, error) {
+	return windowsEnvHelperTestBackend{spec: p.Spec()}, nil
+}
+
+type windowsEnvHelperTestBackend struct {
+	spec ProviderSpec
+}
+
+func (b windowsEnvHelperTestBackend) Spec() ProviderSpec { return b.spec }
+func (b windowsEnvHelperTestBackend) Acquire(context.Context, AcquireRequest) (LeaseTarget, error) {
+	return LeaseTarget{
+		Server: Server{Provider: b.spec.Name},
+		SSH: SSHTarget{
+			User:        "crabbox",
+			Host:        "203.0.113.10",
+			Port:        "22",
+			TargetOS:    targetWindows,
+			WindowsMode: windowsModeNormal,
+		},
+		LeaseID: "cbx_win",
+	}, nil
+}
+func (b windowsEnvHelperTestBackend) Resolve(context.Context, ResolveRequest) (LeaseTarget, error) {
+	return b.Acquire(context.Background(), AcquireRequest{})
+}
+func (b windowsEnvHelperTestBackend) List(context.Context, ListRequest) ([]LeaseView, error) {
+	return nil, nil
+}
+func (b windowsEnvHelperTestBackend) ReleaseLease(context.Context, ReleaseLeaseRequest) error {
+	return nil
+}
+func (b windowsEnvHelperTestBackend) Touch(context.Context, TouchRequest) (Server, error) {
+	return Server{Provider: b.spec.Name}, nil
+}
 
 func TestFormatRunSummary(t *testing.T) {
 	got := formatRunSummary(runTimings{
@@ -147,6 +210,7 @@ func TestRunCommandRejectsUnsupportedDelegatedCaptureOptions(t *testing.T) {
 		{name: "e2b download", provider: "e2b", args: []string{"--download", "/tmp/proof=proof.bin"}, want: "e2b delegates run execution; --download is not supported"},
 		{name: "daytona script", provider: "daytona", args: []string{"--script", "testdata/missing.sh"}, want: "daytona delegates run execution; --script is not supported"},
 		{name: "e2b fresh pr", provider: "e2b", args: []string{"--fresh-pr", "example-org/my-app#1"}, want: "e2b delegates sync; --fresh-pr is not supported"},
+		{name: "e2b full resync", provider: "e2b", args: []string{"--full-resync"}, want: "e2b delegates sync; --full-resync is not supported"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -182,6 +246,28 @@ func TestRunCommandRejectsDelegatedScriptStdinBeforeReading(t *testing.T) {
 	}
 }
 
+func TestRunCommandRejectsDelegatedEnvHelper(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "env.profile")
+	if err := os.WriteFile(profile, []byte("API_TOKEN=secret\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	err := (App{Stdout: &stdout, Stderr: &stderr}).runCommand(context.Background(), []string{
+		"--provider", "e2b",
+		"--allow-env", "API_TOKEN",
+		"--env-from-profile", profile,
+		"--env-helper", "live",
+		"--", "true",
+	})
+	var exitErr ExitError
+	if !AsExitError(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("error=%v, want exit 2", err)
+	}
+	if !strings.Contains(exitErr.Message, "e2b delegates run execution; --env-helper is not supported") {
+		t.Fatalf("message=%q", exitErr.Message)
+	}
+}
+
 func TestRunCommandRejectsSyncOnlyScriptStdinBeforeReading(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := (App{
@@ -198,6 +284,167 @@ func TestRunCommandRejectsSyncOnlyScriptStdinBeforeReading(t *testing.T) {
 	}
 }
 
+func TestRunCommandRejectsEnvHelperWithSyncOnly(t *testing.T) {
+	profile := filepath.Join(t.TempDir(), "env.profile")
+	if err := os.WriteFile(profile, []byte("API_TOKEN=secret\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	err := (App{Stdout: &stdout, Stderr: &stderr}).runCommand(context.Background(), []string{
+		"--sync-only",
+		"--allow-env", "API_TOKEN",
+		"--env-from-profile", profile,
+		"--env-helper", "live",
+	})
+	var exitErr ExitError
+	if !AsExitError(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("error=%v, want exit 2", err)
+	}
+	if !strings.Contains(exitErr.Message, "--env-helper cannot be combined with --sync-only") {
+		t.Fatalf("message=%q", exitErr.Message)
+	}
+}
+
+func TestRunCommandCleansEnvProfileWhenProbeFails(t *testing.T) {
+	dir := t.TempDir()
+	sshPath := filepath.Join(dir, "ssh")
+	logPath := filepath.Join(dir, "ssh.log")
+	script := `#!/bin/sh
+cmd=""
+for arg do
+  cmd="$arg"
+done
+printf '%s\n---\n' "$cmd" >> "$CRABBOX_FAKE_SSH_LOG"
+case "$cmd" in
+  *"secret=true"*) exit 9 ;;
+esac
+exit 0
+`
+	if err := os.WriteFile(sshPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CRABBOX_FAKE_SSH_LOG", logPath)
+	profile := filepath.Join(dir, "env.profile")
+	if err := os.WriteFile(profile, []byte("API_TOKEN=secret\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	err := (App{Stdout: &stdout, Stderr: &stderr}).runCommand(context.Background(), []string{
+		"--provider", "ssh",
+		"--static-host", "203.0.113.10",
+		"--static-user", "crabbox",
+		"--static-work-root", "/tmp/crabbox-test",
+		"--no-sync",
+		"--allow-env", "API_TOKEN",
+		"--env-from-profile", profile,
+		"--", "true",
+	})
+	var exitErr ExitError
+	if !AsExitError(err, &exitErr) || exitErr.Code != 7 {
+		t.Fatalf("error=%v, want exit 7", err)
+	}
+	if !strings.Contains(exitErr.Message, "probe env profile") {
+		t.Fatalf("message=%q", exitErr.Message)
+	}
+	logData, readErr := os.ReadFile(logPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(logData), "rm -f --") || !strings.Contains(string(logData), ".crabbox/env/run.env") {
+		t.Fatalf("cleanup command missing from ssh log:\n%s", logData)
+	}
+}
+
+func TestValidateRunEnvHelperTargetRejectsNativeWindows(t *testing.T) {
+	err := validateRunEnvHelperTarget(SSHTarget{TargetOS: targetWindows, WindowsMode: windowsModeNormal}, ".crabbox/env/live")
+	var exitErr ExitError
+	if !AsExitError(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("error=%v, want exit 2", err)
+	}
+	if !strings.Contains(exitErr.Message, "--env-helper is not supported for native Windows targets yet") {
+		t.Fatalf("message=%q", exitErr.Message)
+	}
+	if err := validateRunEnvHelperTarget(SSHTarget{TargetOS: targetWindows, WindowsMode: windowsModeWSL2}, ".crabbox/env/live"); err != nil {
+		t.Fatalf("wsl2 helper rejected: %v", err)
+	}
+}
+
+func TestRunCommandRejectsWindowsEnvHelperBeforeRemoteCommands(t *testing.T) {
+	dir := t.TempDir()
+	sshPath := filepath.Join(dir, "ssh")
+	logPath := filepath.Join(dir, "ssh.log")
+	script := `#!/bin/sh
+printf 'ssh called\n' >> "$CRABBOX_FAKE_SSH_LOG"
+exit 0
+`
+	if err := os.WriteFile(sshPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("CRABBOX_FAKE_SSH_LOG", logPath)
+	profile := filepath.Join(dir, "env.profile")
+	if err := os.WriteFile(profile, []byte("API_TOKEN=secret\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	err := (App{Stdout: &stdout, Stderr: &stderr}).runCommand(context.Background(), []string{
+		"--provider", "windows-env-helper-test",
+		"--target", "windows",
+		"--windows-mode", "normal",
+		"--static-host", "203.0.113.10",
+		"--static-user", "crabbox",
+		"--static-work-root", `C:\crabbox-test`,
+		"--no-sync",
+		"--allow-env", "API_TOKEN",
+		"--env-from-profile", profile,
+		"--env-helper", "live",
+		"--", "true",
+	})
+	var exitErr ExitError
+	if !AsExitError(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("error=%v, want exit 2", err)
+	}
+	if !strings.Contains(exitErr.Message, "--env-helper is not supported for native Windows targets yet") {
+		t.Fatalf("message=%q", exitErr.Message)
+	}
+	if _, readErr := os.ReadFile(logPath); !os.IsNotExist(readErr) {
+		t.Fatalf("ssh should not run before Windows env-helper rejection, readErr=%v", readErr)
+	}
+}
+
+func TestFullResyncPrunesEvenWhenDeleteDisabled(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		delete     bool
+		fullResync bool
+		want       bool
+	}{
+		{name: "normal delete off", want: false},
+		{name: "normal delete on", delete: true, want: true},
+		{name: "full resync delete off", fullResync: true, want: true},
+		{name: "full resync delete on", delete: true, fullResync: true, want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldPruneRemoteSync(tt.delete, tt.fullResync); got != tt.want {
+				t.Fatalf("shouldPruneRemoteSync=%t want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFullResyncSeedsPruneManifestFromGit(t *testing.T) {
+	if !shouldSeedRemotePruneManifest(false, true) {
+		t.Fatal("full-resync should seed old manifest from git before pruning")
+	}
+	if !shouldSeedRemotePruneManifest(true, false) {
+		t.Fatal("hydrated actions workspace should seed old manifest from git before pruning")
+	}
+	if shouldSeedRemotePruneManifest(false, false) {
+		t.Fatal("normal non-hydrated sync should not seed old manifest from git")
+	}
+}
+
 func TestRunCommandRejectsApplyLocalPatchWithoutFreshPR(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := (App{Stdout: &stdout, Stderr: &stderr}).runCommand(context.Background(), []string{"--apply-local-patch", "--", "true"})
@@ -206,6 +453,18 @@ func TestRunCommandRejectsApplyLocalPatchWithoutFreshPR(t *testing.T) {
 		t.Fatalf("error=%v, want exit 2", err)
 	}
 	if !strings.Contains(exitErr.Message, "--apply-local-patch requires --fresh-pr") {
+		t.Fatalf("message=%q", exitErr.Message)
+	}
+}
+
+func TestRunCommandRejectsFullResyncWithNoSync(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	err := (App{Stdout: &stdout, Stderr: &stderr}).runCommand(context.Background(), []string{"--full-resync", "--no-sync", "--", "true"})
+	var exitErr ExitError
+	if !AsExitError(err, &exitErr) || exitErr.Code != 2 {
+		t.Fatalf("error=%v, want exit 2", err)
+	}
+	if !strings.Contains(exitErr.Message, "--full-resync cannot be combined with --no-sync") {
 		t.Fatalf("message=%q", exitErr.Message)
 	}
 }

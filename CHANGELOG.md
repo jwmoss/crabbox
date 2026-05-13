@@ -5,11 +5,13 @@
 ### Added
 
 - Added `provider: modal` delegated runs for Modal Sandboxes through the local Modal Python client, including archive sync, env allowlist forwarding, docs, and no-live-credential tests.
+- Added `crabbox run --full-resync` / `--fresh-sync` to reset stale remote workdirs before syncing, plus `--env-helper` for reusable profile-backed env wrappers on POSIX SSH leases.
 - Added native Windows support for `crabbox run --script` / `--script-stdin` and a real native Windows `--preflight` probe.
 - Added configurable `crabbox run --preflight` tool probes via `--preflight-tools`, `CRABBOX_PREFLIGHT_TOOLS`, and `run.preflightTools`.
 
 ### Changed
 
+- Improved sync and SSH watchdog output so long quiet syncs and dead SSH waits include concrete retry/replace hints.
 - Clarified hosted broker access for non-allowlisted users and documented the minimum self-hosted broker setup. Thanks @alan-mathison-enigma.
 
 ### Fixed

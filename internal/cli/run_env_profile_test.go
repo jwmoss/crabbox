@@ -76,6 +76,45 @@ func TestWindowsRemoteUploadRunEnvProfileWritesUTF8BOMBytes(t *testing.T) {
 	}
 }
 
+func TestRemoteProbeRunEnvProfileRedactsSecretValues(t *testing.T) {
+	got := remoteProbeRunEnvProfileCommand("/work/repo", ".crabbox/env/live.env", []string{"OPENAI_API_KEY", "CI"})
+	for _, want := range []string{
+		".crabbox/env/live.env",
+		"OPENAI_API_KEY",
+		"secret=true",
+		"%s=set",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("remote probe missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "sk-") {
+		t.Fatalf("remote probe should not contain secret values: %q", got)
+	}
+}
+
+func TestFormatRunEnvHelperSourcesProfileAndExecsCommand(t *testing.T) {
+	got := formatRunEnvHelper(".crabbox/env/live.env")
+	for _, want := range []string{
+		"profile='.crabbox/env/live.env'",
+		". \"$profile\"",
+		"exec \"$@\"",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("env helper missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestSafeEnvHelperNameRejectsPaths(t *testing.T) {
+	if _, err := safeEnvHelperName("live"); err != nil {
+		t.Fatalf("safe helper rejected: %v", err)
+	}
+	if _, err := safeEnvHelperName("../live"); err == nil {
+		t.Fatal("path helper name accepted")
+	}
+}
+
 func containsAll(s string, values ...string) bool {
 	for _, value := range values {
 		if !strings.Contains(s, value) {

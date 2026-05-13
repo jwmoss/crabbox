@@ -13,6 +13,8 @@ crabbox run --desktop --browser --shell 'echo "$DISPLAY"; "$BROWSER" --version'
 crabbox run --id blue-lobster --shell 'pnpm install --frozen-lockfile && pnpm test'
 crabbox run --id blue-lobster --script ./scripts/live-smoke.sh
 crabbox run --env-from-profile ~/.project-live.profile --allow-env API_TOKEN --script ./scripts/live-smoke.sh
+crabbox run --id blue-lobster --full-resync -- pnpm check:changed
+crabbox run --id blue-lobster --env-from-profile ~/.project-live.profile --allow-env OPENAI_API_KEY --env-helper live -- ./.crabbox/env/live pnpm test:live
 crabbox run --fresh-pr acme/app#123 --script ./scripts/e2e-smoke.sh
 crabbox run --id cbx_abcdef123456 --junit junit.xml -- go test ./...
 crabbox run --provider blacksmith-testbox --blacksmith-workflow .github/workflows/ci-check-testbox.yml --blacksmith-job test -- pnpm test
@@ -86,7 +88,7 @@ metadata exists and SSH is reachable, `tailscale` fails if the tailnet path is
 not available, and `public` forces the provider host. See
 [Tailscale](../features/tailscale.md).
 
-Sync uses `git ls-files --cached --others --exclude-standard` to build a file manifest, then feeds that manifest to rsync over SSH. That means tracked files plus nonignored untracked files sync, while `.git`, ignored local build output, dependency folders, `.crabboxignore` patterns, `sync.exclude` patterns, and common caches stay out of the transfer. Default excludes also cover common generated churn such as `.ignored`, `.vite`, `playwright-report`, `test-results`, and local `.crabbox` log/capture directories. Crabbox records a local/remote sync fingerprint and skips rsync when the tracked commit plus manifest and dirty metadata have not changed. Use `--checksum` when you need a paranoid checksum scan, and `--debug` to print sync timing, progress, and itemized rsync output.
+Sync uses `git ls-files --cached --others --exclude-standard` to build a file manifest, then feeds that manifest to rsync over SSH. That means tracked files plus nonignored untracked files sync, while `.git`, ignored local build output, dependency folders, `.crabboxignore` patterns, `sync.exclude` patterns, and common caches stay out of the transfer. Default excludes also cover common generated churn such as `.ignored`, `.vite`, `playwright-report`, `test-results`, and local `.crabbox` log/capture directories. Crabbox records a local/remote sync fingerprint and skips rsync when the tracked commit plus manifest and dirty metadata have not changed. Use `--full-resync` (alias `--fresh-sync`) when a warm lease smells stale: Crabbox deletes the remote workdir, skips the fingerprint fast path, reseeds Git when possible, and uploads the checkout from scratch. Use `--checksum` when you need a paranoid checksum scan, and `--debug` to print sync timing, progress, and itemized rsync output.
 
 Use `--script <file>` or `--script-stdin` for multi-line remote commands.
 Crabbox uploads the script into `.crabbox/scripts/` under the remote workdir,
@@ -105,6 +107,13 @@ only allowed names, and prints redacted presence/length metadata instead of
 values. `--allow-env` is repeatable and also accepts comma-separated names.
 Native Windows env-profile handoff files are uploaded as UTF-8 and imported
 with PowerShell UTF-8 decoding, so non-ASCII profile values are preserved.
+POSIX SSH targets also probe the uploaded profile from inside the remote
+workdir and print redacted remote presence metadata before the command runs.
+Add `--env-helper <name>` to persist a reusable helper at
+`.crabbox/env/<name>` for that lease; the helper sources the matching profile
+and then execs the command you pass to it. Persist helpers only on boxes you
+control, because the profile remains on the remote workdir until you delete it
+or reset the lease.
 
 Use `--fresh-pr <owner/repo#number>` to skip local dirty sync and create a
 fresh remote GitHub PR checkout. `--fresh-pr <number>` uses the current
@@ -128,7 +137,7 @@ Crabbox writes uploaded Windows scripts as UTF-8 with a byte-order mark when the
 input has no BOM, which keeps Windows PowerShell 5.1 from treating non-ASCII
 source as the system ANSI code page.
 
-Before rsync starts, Crabbox prints the candidate file count and byte estimate. Large syncs warn or fail according to `sync.warnFiles`, `sync.warnBytes`, `sync.failFiles`, and `sync.failBytes`; use `--force-sync-large` or `sync.allowLarge: true` only when the transfer size is intentional. Quiet rsync runs print a heartbeat, and `sync.timeout` kills stalled syncs.
+Before rsync starts, Crabbox prints the candidate file count and byte estimate. Large syncs warn or fail according to `sync.warnFiles`, `sync.warnBytes`, `sync.failFiles`, and `sync.failBytes`; use `--force-sync-large` or `sync.allowLarge: true` only when the transfer size is intentional. Quiet rsync runs print a heartbeat; after several minutes without visible progress the heartbeat includes a concrete retry hint. `sync.timeout` kills stalled syncs and suggests `--full-resync` or a fresh lease.
 Large sync warnings also print the top source directories by file count plus a hint to update `.crabboxignore` or `sync.exclude`.
 
 Before sync, `run` prints a compact context block with run ID, portal/log URLs,

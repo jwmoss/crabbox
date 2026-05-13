@@ -347,9 +347,13 @@ Forwarded environment is intentionally narrow: `NODE_OPTIONS` and `CI`. Do not p
 
 For live-secret smoke tests, use `crabbox run --env-from-profile <file>
 --allow-env NAME` so Crabbox forwards only selected names and prints redacted
-presence/length metadata. For larger commands, use `--script <file>` or
-`--script-stdin` so the remote runner executes an uploaded file instead of a
-giant quoted shell string.
+presence/length metadata, including a remote probe after upload. Add
+`--env-helper live` on POSIX SSH leases when follow-up commands should reuse a
+remote `.crabbox/env/live` wrapper. For stale warm boxes, `--full-resync`
+(alias `--fresh-sync`) resets the remote workdir before syncing instead of
+trusting the fingerprint fast path. For larger commands, use `--script <file>`
+or `--script-stdin` so the remote runner executes an uploaded file instead of
+a giant quoted shell string.
 Delegated providers may own their command transport. Blacksmith Testbox cannot
 forward CLI-side env values; Crabbox prints an explicit unsupported warning and
 the workflow should provide required secrets.

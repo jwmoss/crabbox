@@ -111,9 +111,9 @@ func waitForSSHReady(ctx context.Context, target *SSHTarget, stderr io.Writer, p
 		}
 		if time.Now().After(deadline) {
 			if lastPorts != "" {
-				return exit(5, "timed out waiting for SSH on %s during %s ports=%s", target.Host, phase, lastPorts)
+				return exit(5, "timed out waiting for SSH on %s during %s ports=%s; %s", target.Host, phase, lastPorts, sshWaitNextAction(phase))
 			}
-			return exit(5, "timed out waiting for SSH on %s during %s", target.Host, phase)
+			return exit(5, "timed out waiting for SSH on %s during %s; %s", target.Host, phase, sshWaitNextAction(phase))
 		}
 		if target.SSHConfigProxy {
 			if runSSHQuietWithOptions(ctx, *target, sshReadyCommand(*target), "5", "1") == nil {
@@ -162,6 +162,17 @@ func waitForSSHReady(ctx context.Context, target *SSHTarget, stderr io.Writer, p
 
 func WaitForSSHReady(ctx context.Context, target *SSHTarget, stderr io.Writer, phase string, timeout time.Duration) error {
 	return waitForSSHReady(ctx, target, stderr, phase, timeout)
+}
+
+func sshWaitNextAction(phase string) string {
+	switch phase {
+	case "before sync":
+		return "next_action=retry with --full-resync, then use a fresh lease if SSH still fails"
+	case "before command":
+		return "next_action=retry the command, then stop or replace the lease if SSH still fails"
+	default:
+		return "next_action=check lease status, then stop or replace the lease if SSH stays unreachable"
+	}
 }
 
 func sshWaitProgressMessage(target *SSHTarget, phase, reachablePort, transportPort, portStatus string, elapsed, remaining time.Duration) string {
@@ -498,6 +509,7 @@ type rsyncOptions struct {
 	Debug             bool
 	Delete            bool
 	Checksum          bool
+	FullResync        bool
 	UseFilesFrom      bool
 	FilesFrom         []byte
 	Timeout           time.Duration
@@ -549,7 +561,7 @@ func rsync(ctx context.Context, target SSHTarget, src, dst string, excludes []st
 	err := cmd.Run()
 	stopHeartbeat()
 	if ctx.Err() == context.DeadlineExceeded {
-		return exit(6, "rsync timed out after %s", opts.Timeout)
+		return exit(6, "rsync timed out after %s; next_action=retry with --full-resync, then use a fresh lease if sync still stalls", opts.Timeout)
 	}
 	if opts.Debug {
 		fmt.Fprintf(stderr, "rsync elapsed=%s checksum=%t delete=%t\n", time.Since(start).Round(time.Millisecond), opts.Checksum, opts.Delete)
@@ -603,7 +615,12 @@ func startSyncHeartbeat(stderr io.Writer, start time.Time, interval time.Duratio
 			case <-done:
 				return
 			case <-ticker.C:
-				fmt.Fprintf(stderr, "still syncing after %s...\n", time.Since(start).Round(time.Second))
+				elapsed := time.Since(start).Round(time.Second)
+				if elapsed >= 4*time.Minute {
+					fmt.Fprintf(stderr, "still syncing after %s... watchdog=sync-quiet next_action=wait, or cancel and retry with --full-resync/fresh lease if no progress\n", elapsed)
+				} else {
+					fmt.Fprintf(stderr, "still syncing after %s...\n", elapsed)
+				}
 			}
 		}
 	}()
@@ -906,6 +923,12 @@ func ShellWords(words []string) []string {
 
 func remoteMkdir(workdir string) string {
 	return "mkdir -p " + shellQuote(workdir)
+}
+
+func remoteResetWorkdir(workdir string) string {
+	parent := filepath.ToSlash(filepath.Dir(workdir))
+	script := "set -eu\nmkdir -p " + shellQuote(parent) + "\nrm -rf -- " + shellQuote(workdir) + "\nmkdir -p " + shellQuote(workdir)
+	return "bash -lc " + shellQuote(script)
 }
 
 func remoteGitHydrate(workdir, baseRef string) string {
