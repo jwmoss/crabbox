@@ -2,6 +2,10 @@
 
 ## 0.13.1 - Unreleased
 
+### Fixed
+
+- Fixed coordinator TTL cleanup so provider deletion failures keep leases active with retry metadata instead of silently expiring while cloud instances continue running.
+
 ## 0.13.0 - 2026-05-13
 
 ### Added

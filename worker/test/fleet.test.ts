@@ -29,6 +29,7 @@ afterEach(() => {
 
 class MemoryStorage {
   private readonly values = new Map<string, unknown>();
+  private alarmTime: number | undefined;
 
   async get<T>(key: string): Promise<T | undefined> {
     return this.values.get(key) as T | undefined;
@@ -42,9 +43,13 @@ class MemoryStorage {
     this.values.delete(key);
   }
 
-  async deleteAlarm(): Promise<void> {}
+  async deleteAlarm(): Promise<void> {
+    this.alarmTime = undefined;
+  }
 
-  async setAlarm(_time: number): Promise<void> {}
+  async setAlarm(time: number): Promise<void> {
+    this.alarmTime = time;
+  }
 
   async list<T>({ prefix = "" }: { prefix?: string } = {}): Promise<Map<string, T>> {
     const matches = new Map<string, T>();
@@ -62,6 +67,10 @@ class MemoryStorage {
 
   value<T>(key: string): T | undefined {
     return this.values.get(key) as T | undefined;
+  }
+
+  alarm(): number | undefined {
+    return this.alarmTime;
   }
 }
 
@@ -100,6 +109,68 @@ class FakeWebSocket {
 }
 
 describe("fleet lease identity and idle", () => {
+  it("keeps expired leases active when provider cleanup fails and retries later", async () => {
+    const storage = new MemoryStorage();
+    const fleet = testFleet(storage, {
+      aws: fakeProvider(undefined, { provider: "aws" }, async () => {
+        throw new Error("aws terminate throttled");
+      }),
+    });
+    storage.seed(
+      "lease:cbx_000000000001",
+      testLease({
+        id: "cbx_000000000001",
+        provider: "aws",
+        cloudID: "i-000000000001",
+        region: "eu-west-1",
+        expiresAt: "2026-05-01T00:00:01.000Z",
+      }),
+    );
+
+    await fleet.alarm();
+
+    const lease = storage.value<LeaseRecord>("lease:cbx_000000000001");
+    expect(lease?.state).toBe("active");
+    expect(lease?.cleanupAttempts).toBe(1);
+    expect(lease?.cleanupError).toContain("aws terminate throttled");
+    expect(Date.parse(lease?.cleanupRetryAt ?? "")).toBeGreaterThan(Date.now());
+    expect(storage.alarm()).toBe(Date.parse(lease?.cleanupRetryAt ?? ""));
+  });
+
+  it("expires leases only after provider cleanup succeeds", async () => {
+    const storage = new MemoryStorage();
+    let deletes = 0;
+    const fleet = testFleet(storage, {
+      aws: fakeProvider(undefined, { provider: "aws" }, async () => {
+        deletes += 1;
+      }),
+    });
+    storage.seed(
+      "lease:cbx_000000000001",
+      testLease({
+        id: "cbx_000000000001",
+        provider: "aws",
+        cloudID: "i-000000000001",
+        region: "eu-west-1",
+        cleanupAttempts: 2,
+        cleanupError: "previous failure",
+        cleanupFailedAt: "2026-05-01T00:00:10.000Z",
+        cleanupRetryAt: "2026-05-01T00:05:10.000Z",
+        expiresAt: "2026-05-01T00:00:01.000Z",
+      }),
+    );
+
+    await fleet.alarm();
+
+    const lease = storage.value<LeaseRecord>("lease:cbx_000000000001");
+    expect(deletes).toBe(1);
+    expect(lease?.state).toBe("expired");
+    expect(lease?.cleanupAttempts).toBeUndefined();
+    expect(lease?.cleanupError).toBeUndefined();
+    expect(lease?.cleanupRetryAt).toBeUndefined();
+    expect(storage.alarm()).toBeUndefined();
+  });
+
   it("creates leases through the public route with slug and idle metadata", async () => {
     const storage = new MemoryStorage();
     const fleet = testFleet(storage, {
@@ -3253,6 +3324,7 @@ function fakeProvider(
     market?: string;
     attempts?: ProvisioningAttempt[];
   } = {},
+  onDelete?: (id: string) => Promise<void>,
 ) {
   return {
     async listCrabboxServers() {
@@ -3282,7 +3354,9 @@ function fakeProvider(
         attempts: result.attempts,
       };
     },
-    async deleteServer() {},
+    async deleteServer(id: string) {
+      await onDelete?.(id);
+    },
     async createImage(_instanceID: string, name: string) {
       return { id: "ami-000000000001", name, state: "pending", region: "eu-west-1" };
     },
