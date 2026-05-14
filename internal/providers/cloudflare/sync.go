@@ -72,7 +72,7 @@ func (b *cloudflareBackend) syncWorkspace(ctx context.Context, client *cloudflar
 		{Name: "archive", Ms: archiveDuration.Milliseconds()},
 		{Name: "disk", Ms: diskDuration.Milliseconds()},
 		{Name: "upload", Ms: uploadDuration.Milliseconds()},
-		{Name: "cf_containers_sync", Ms: total.Milliseconds()},
+		{Name: "cloudflare_sync", Ms: total.Milliseconds()},
 	}, total, nil
 }
 
