@@ -145,7 +145,9 @@ For the full mental model, see [How Crabbox Works](docs/how-it-works.md). For th
 
 ## Machine classes
 
-`beast` is the default. Both providers fall back across an ordered list of instance types.
+`beast` is the default for providers that expose class-based managed capacity.
+The providers below fall back across ordered instance-type lists unless `--type`
+pins a specific provider-native size.
 
 ```text
 Hetzner    standard  ccx33, cpx62, cx53
@@ -188,6 +190,10 @@ Namespace  standard  S
 ```
 
 Override with `--type` or `CRABBOX_SERVER_TYPE` for a specific instance.
+Providers without a row either use provider-native capacity settings or reject
+class/type selection. Cloudflare uses the Worker configuration in
+`worker/wrangler.cloudflare.jsonc` (`instance_type`, `max_instances`) instead
+of machine classes.
 
 ## Configuration
 
