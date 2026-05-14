@@ -2116,11 +2116,7 @@ func NormalizeCloudflareContainerInstanceType(value string) (string, bool) {
 
 func cloudflareContainerInstanceTypeForClass(class string) string {
 	switch strings.ToLower(strings.TrimSpace(class)) {
-	case "", "beast":
-		return "standard-4"
-	case "standard":
-		return "standard-3"
-	case "fast", "large":
+	case "", "standard", "fast", "large", "beast":
 		return "standard-4"
 	default:
 		if instanceType, ok := normalizeCloudflareContainerInstanceType(class); ok {

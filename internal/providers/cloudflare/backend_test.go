@@ -209,8 +209,8 @@ func TestCloudflareAliasAcceptsResourceFlags(t *testing.T) {
 	if err := ApplyCloudflareProviderFlags(&cfg, fs, values); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ServerType != "standard-3" {
-		t.Fatalf("server type = %q, want standard-3", cfg.ServerType)
+	if cfg.ServerType != "standard-4" {
+		t.Fatalf("server type = %q, want standard-4", cfg.ServerType)
 	}
 }
 
