@@ -260,6 +260,10 @@ export interface ProviderImage {
   name: string;
   state: string;
   region?: string;
+  target?: TargetOS;
+  windowsMode?: WindowsMode;
+  serverType?: string;
+  architecture?: string;
 }
 
 export interface PromotedImageRecord extends ProviderImage {

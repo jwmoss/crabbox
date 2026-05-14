@@ -45,18 +45,20 @@ func (a App) imageCreate(ctx context.Context, args []string) error {
 
 func (a App) imagePromote(ctx context.Context, args []string) error {
 	fs := newFlagSet("image promote", a.Stderr)
+	target := fs.String("target", "", "AWS image target: linux, macos, or windows")
+	region := fs.String("region", "", "AWS region for AMI lookup")
 	jsonOut := fs.Bool("json", false, "print JSON")
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return exit(2, "usage: crabbox image promote <ami-id>")
+		return exit(2, "usage: crabbox image promote <ami-id> [--target linux|macos|windows] [--region <aws-region>]")
 	}
 	coord, err := configuredAdminCoordinator()
 	if err != nil {
 		return err
 	}
-	image, err := coord.PromoteImage(ctx, fs.Arg(0))
+	image, err := coord.PromoteImage(ctx, fs.Arg(0), *target, *region)
 	if err != nil {
 		return err
 	}

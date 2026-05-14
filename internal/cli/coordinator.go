@@ -165,11 +165,15 @@ type CoordinatorProviderReadiness struct {
 }
 
 type CoordinatorImage struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	State      string `json:"state"`
-	Region     string `json:"region,omitempty"`
-	PromotedAt string `json:"promotedAt,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	State        string `json:"state"`
+	Region       string `json:"region,omitempty"`
+	Target       string `json:"target,omitempty"`
+	WindowsMode  string `json:"windowsMode,omitempty"`
+	ServerType   string `json:"serverType,omitempty"`
+	Architecture string `json:"architecture,omitempty"`
+	PromotedAt   string `json:"promotedAt,omitempty"`
 }
 
 type CoordinatorGitHubLoginStart struct {
@@ -914,11 +918,18 @@ func (c *CoordinatorClient) Image(ctx context.Context, imageID string) (Coordina
 	return res.Image, err
 }
 
-func (c *CoordinatorClient) PromoteImage(ctx context.Context, imageID string) (CoordinatorImage, error) {
+func (c *CoordinatorClient) PromoteImage(ctx context.Context, imageID, target, region string) (CoordinatorImage, error) {
 	var res struct {
 		Image CoordinatorImage `json:"image"`
 	}
-	err := c.do(ctx, http.MethodPost, "/v1/images/"+url.PathEscape(imageID)+"/promote", map[string]any{}, &res)
+	body := map[string]any{}
+	if target != "" {
+		body["target"] = target
+	}
+	if region != "" {
+		body["region"] = region
+	}
+	err := c.do(ctx, http.MethodPost, "/v1/images/"+url.PathEscape(imageID)+"/promote", body, &res)
 	return res.Image, err
 }
 

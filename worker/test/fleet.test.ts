@@ -594,9 +594,9 @@ describe("fleet lease identity and idle", () => {
     const create = await fleet.fetch(
       request("POST", "/v1/leases", {
         headers: {
-          "x-crabbox-owner": "peter@example.com",
+          "x-crabbox-owner": "alice@example.com",
           "cf-connecting-ip": "203.0.113.7",
-          "x-crabbox-org": "openclaw",
+          "x-crabbox-org": "example-org",
         },
         body: {
           leaseID: "cbx_abcdef123456",
@@ -611,6 +611,61 @@ describe("fleet lease identity and idle", () => {
     );
     expect(create.status).toBe(201);
     expect(awsCIDRs).toEqual(["203.0.113.7/32"]);
+  });
+
+  it("only applies target-matching promoted AWS images", async () => {
+    const storage = new MemoryStorage();
+    storage.seed("image:aws:promoted:macos:arm64_mac:eu-west-1", {
+      id: "ami-macos",
+      name: "crabbox-macos",
+      state: "available",
+      region: "eu-west-1",
+      target: "macos",
+      architecture: "arm64_mac",
+      promotedAt: "2026-05-01T12:46:00Z",
+    });
+    const seenAMI: string[] = [];
+    const fleet = testFleet(storage, {
+      aws: fakeProvider((config) => {
+        seenAMI.push(config.awsAMI);
+      }),
+    });
+
+    const linux = await fleet.fetch(
+      request("POST", "/v1/leases", {
+        headers: {
+          "x-crabbox-owner": "alice@example.com",
+          "cf-connecting-ip": "203.0.113.7",
+          "x-crabbox-org": "example-org",
+        },
+        body: {
+          provider: "aws",
+          class: "standard",
+          serverType: "c7a.8xlarge",
+          sshPublicKey: "ssh-ed25519 test",
+        },
+      }),
+    );
+    expect(linux.status).toBe(201);
+
+    const macos = await fleet.fetch(
+      request("POST", "/v1/leases", {
+        headers: {
+          "x-crabbox-owner": "alice@example.com",
+          "cf-connecting-ip": "203.0.113.7",
+          "x-crabbox-org": "example-org",
+        },
+        body: {
+          provider: "aws",
+          target: "macos",
+          capacity: { market: "on-demand" },
+          serverType: "mac2.metal",
+          sshPublicKey: "ssh-ed25519 test",
+        },
+      }),
+    );
+    expect(macos.status).toBe(201);
+    expect(seenAMI).toEqual(["", "ami-macos"]);
   });
 
   it("honors requested AWS SSH ingress CIDRs over request source IP", async () => {
@@ -2239,9 +2294,58 @@ describe("fleet lease identity and idle", () => {
       }),
     );
     expect(promoted.status).toBe(200);
-    expect(storage.value("image:aws:promoted")).toEqual(
-      expect.objectContaining({ id: "ami-000000000001", state: "available" }),
+    expect(storage.value("image:aws:promoted:linux:x86_64:eu-west-1")).toEqual(
+      expect.objectContaining({ id: "ami-000000000001", state: "available", target: "linux" }),
     );
+    expect(storage.value("image:aws:promoted")).toEqual(
+      expect.objectContaining({ id: "ami-000000000001", state: "available", target: "linux" }),
+    );
+  });
+
+  it("scopes promoted AWS macOS images by target and architecture", async () => {
+    const storage = new MemoryStorage();
+    const fleet = testFleet(storage, {
+      aws: fakeProvider(),
+    });
+    storage.seed(
+      "lease:cbx_000000000001",
+      testLease({
+        id: "cbx_000000000001",
+        provider: "aws",
+        target: "macos",
+        cloudID: "i-123",
+        region: "eu-west-1",
+        serverType: "mac2.metal",
+      }),
+    );
+
+    const created = await fleet.fetch(
+      request("POST", "/v1/images", {
+        headers: { "x-crabbox-admin": "true" },
+        body: { leaseID: "cbx_000000000001", name: "crabbox-macos-test" },
+      }),
+    );
+    expect(created.status).toBe(201);
+    await expect(created.json()).resolves.toMatchObject({
+      image: {
+        id: "ami-000000000001",
+        target: "macos",
+        architecture: "arm64_mac",
+        serverType: "mac2.metal",
+      },
+    });
+
+    const promoted = await fleet.fetch(
+      request("POST", "/v1/images/ami-000000000001/promote", {
+        headers: { "x-crabbox-admin": "true" },
+        body: {},
+      }),
+    );
+    expect(promoted.status).toBe(200);
+    expect(storage.value("image:aws:promoted:macos:arm64_mac:eu-west-1")).toEqual(
+      expect.objectContaining({ id: "ami-000000000001", target: "macos" }),
+    );
+    expect(storage.value("image:aws:promoted")).toBeUndefined();
   });
 
   it("mints broker-owned artifact upload URLs without exposing secrets", async () => {

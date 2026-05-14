@@ -55,6 +55,7 @@ import type {
   RunRecord,
   RunTelemetryRequest,
   RunTelemetrySummary,
+  TargetOS,
   TestFailure,
   TestResultSummary,
   TailscaleMetadata,
@@ -845,7 +846,7 @@ export class FleetDurableObject implements DurableObject {
       config.awsSSHCIDRs = requestSourceCIDRs(request);
     }
     if (config.provider === "aws" && !config.awsAMI) {
-      config.awsAMI = (await this.promotedAWSImage())?.id ?? "";
+      config.awsAMI = (await this.promotedAWSImage(config))?.id ?? "";
     }
     if (config.provider === "azure" && !config.azureLocation) {
       config.azureLocation = azureLocationFor(this.env, "");
@@ -3058,11 +3059,15 @@ export class FleetDurableObject implements DurableObject {
         { status: 400 },
       );
     }
-    const image = await this.provider("aws", lease.region).createImage(
-      lease.cloudID,
-      name,
-      input.noReboot ?? true,
+    const image = enrichAWSImage(
+      await this.provider("aws", lease.region).createImage(
+        lease.cloudID,
+        name,
+        input.noReboot ?? true,
+      ),
+      lease,
     );
+    await this.state.storage.put(createdAWSImageKey(image.id), image);
     return json({ image }, { status: 201 });
   }
 
@@ -3071,23 +3076,89 @@ export class FleetDurableObject implements DurableObject {
     if (!validImageID(imageID)) {
       return json({ error: "invalid_image_id" }, { status: 400 });
     }
+    const known = await this.createdAWSImage(imageID);
     if (method === "GET" && action === undefined) {
-      const image = await this.provider("aws").getImage(imageID);
-      return json({ image });
+      const image = await this.provider("aws", known?.region).getImage(imageID);
+      return json({ image: mergeAWSImageMetadata(image, known) });
     }
     if (method === "POST" && action === "promote") {
-      const image = await this.provider("aws").getImage(imageID);
+      const input = await readJson<{
+        target?: string;
+        region?: string;
+        serverType?: string;
+        architecture?: string;
+      }>(request);
+      const target = normalizeAWSImageTarget(input.target ?? known?.target ?? "linux");
+      if (!target) {
+        return json(
+          { error: "invalid_target", message: "target must be linux, macos, or windows" },
+          { status: 400 },
+        );
+      }
+      const rawRegion = input.region ?? known?.region ?? "";
+      const region = sanitizeAWSRegion(rawRegion);
+      if (rawRegion && !region) {
+        return json(
+          { error: "invalid_region", message: "region must be an AWS region name" },
+          { status: 400 },
+        );
+      }
+      const metadata: Partial<ProviderImage> = { ...known, target, region };
+      const serverType = input.serverType ?? known?.serverType;
+      if (serverType) {
+        metadata.serverType = serverType;
+      }
+      const architecture = input.architecture ?? known?.architecture;
+      if (architecture) {
+        metadata.architecture = architecture;
+      }
+      const image = mergeAWSImageMetadata(
+        await this.provider("aws", region).getImage(imageID),
+        metadata,
+      );
       if (image.state !== "available") {
         return json(
           { error: "image_not_available", message: `image ${imageID} is ${image.state}` },
           { status: 409 },
         );
       }
-      const promoted: PromotedImageRecord = { ...image, promotedAt: new Date().toISOString() };
-      await this.state.storage.put(promotedAWSImageKey(), promoted);
+      const promoted: PromotedImageRecord = {
+        ...image,
+        target,
+        region: image.region ?? region,
+        architecture:
+          image.architecture ?? awsImageArchitectureForTarget(target, image.serverType ?? ""),
+        promotedAt: new Date().toISOString(),
+      };
+      await this.state.storage.put(promotedAWSImageKey(promoted), promoted);
+      if (target === "linux") {
+        await this.state.storage.put(legacyPromotedAWSImageKey(), promoted);
+      }
       return json({ image: promoted });
     }
     return json({ error: "not_found" }, { status: 404 });
+  }
+
+  private async createdAWSImage(imageID: string): Promise<ProviderImage | undefined> {
+    return this.state.storage.get<ProviderImage>(createdAWSImageKey(imageID));
+  }
+
+  private async promotedAWSImage(config: {
+    target: TargetOS;
+    serverType: string;
+    awsRegion: string;
+  }): Promise<PromotedImageRecord | undefined> {
+    const scoped = await this.state.storage.get<PromotedImageRecord>(
+      promotedAWSImageKey({
+        target: config.target,
+        architecture: awsImageArchitectureForTarget(config.target, config.serverType),
+        region: config.awsRegion,
+      }),
+    );
+    if (scoped || config.target !== "linux") {
+      return scoped;
+    }
+    return this.state.storage.get<PromotedImageRecord>(legacyPromotedAWSImageKey());
   }
 
   private async expireLeases(): Promise<void> {
@@ -3302,10 +3373,6 @@ export class FleetDurableObject implements DurableObject {
 
   private async putLease(lease: LeaseRecord): Promise<void> {
     await this.state.storage.put(leaseKey(lease.id), lease);
-  }
-
-  private async promotedAWSImage(): Promise<PromotedImageRecord | undefined> {
-    return this.state.storage.get<PromotedImageRecord>(promotedAWSImageKey());
   }
 
   private async getRun(runID: string): Promise<RunRecord | undefined> {
@@ -3524,8 +3591,102 @@ function runEventKey(runID: string, seq: number): string {
   return `${runEventPrefix(runID)}${String(seq).padStart(12, "0")}`;
 }
 
-function promotedAWSImageKey(): string {
+function createdAWSImageKey(imageID: string): string {
+  return `image:aws:created:${imageID}`;
+}
+
+function legacyPromotedAWSImageKey(): string {
   return "image:aws:promoted";
+}
+
+function promotedAWSImageKey(
+  image: Pick<ProviderImage, "target" | "architecture" | "region">,
+): string {
+  const target = image.target ?? "linux";
+  const architecture = image.architecture ?? awsImageArchitectureForTarget(target, "");
+  const region = sanitizeAWSRegion(image.region ?? "");
+  return `image:aws:promoted:${target}:${architecture}:${region}`;
+}
+
+function enrichAWSImage(image: ProviderImage, lease: LeaseRecord): ProviderImage {
+  const metadata: Partial<ProviderImage> = {};
+  if (lease.target) {
+    metadata.target = lease.target;
+  }
+  if (lease.windowsMode) {
+    metadata.windowsMode = lease.windowsMode;
+  }
+  if (lease.serverType) {
+    metadata.serverType = lease.serverType;
+  }
+  const region = image.region ?? lease.region;
+  if (region !== undefined && region !== "") {
+    metadata.region = region;
+  }
+  return mergeAWSImageMetadata(image, metadata);
+}
+
+function mergeAWSImageMetadata(
+  image: ProviderImage,
+  metadata?: Partial<ProviderImage>,
+): ProviderImage {
+  const target = normalizeAWSImageTarget(metadata?.target ?? image.target ?? "linux") ?? "linux";
+  const serverType = metadata?.serverType ?? image.serverType ?? "";
+  const result: ProviderImage = {
+    ...metadata,
+    ...image,
+    target,
+    architecture:
+      metadata?.architecture ??
+      image.architecture ??
+      awsImageArchitectureForTarget(target, serverType),
+  };
+  const windowsMode = metadata?.windowsMode ?? image.windowsMode;
+  if (windowsMode !== undefined) {
+    result.windowsMode = windowsMode;
+  }
+  if (serverType) {
+    result.serverType = serverType;
+  }
+  const imageRegion = image.region;
+  const metadataRegion = metadata?.region;
+  if (imageRegion !== undefined && imageRegion !== "") {
+    result.region = imageRegion;
+  } else if (metadataRegion !== undefined && metadataRegion !== "") {
+    result.region = metadataRegion;
+  }
+  return result;
+}
+
+function normalizeAWSImageTarget(value: string | undefined): TargetOS | undefined {
+  switch ((value ?? "").trim().toLowerCase()) {
+    case "":
+    case "linux":
+    case "ubuntu":
+      return "linux";
+    case "mac":
+    case "macos":
+    case "darwin":
+    case "osx":
+      return "macos";
+    case "win":
+    case "windows":
+      return "windows";
+    default:
+      return undefined;
+  }
+}
+
+function awsImageArchitectureForTarget(target: TargetOS, serverType: string): string {
+  if (target === "macos") {
+    return serverType.startsWith("mac1.") ? "x86_64_mac" : "arm64_mac";
+  }
+  return "x86_64";
+}
+
+function sanitizeAWSRegion(value: string): string {
+  const region = value.trim().toLowerCase();
+  return /^[a-z]{2}-[a-z-]+-[0-9]$/.test(region) ? region : "";
 }
 
 function webVNCTicketPrefix(): string {

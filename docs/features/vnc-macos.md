@@ -43,6 +43,10 @@ allocated Dedicated Hosts with a 24-hour minimum host allocation period.
 Crabbox launches onto a host id you provide; it does not allocate, scrub, or
 retire Mac hosts for you.
 
+Promoted AWS images are scoped by target, architecture, and region. Use
+`crabbox image promote <ami-id> --target macos --region <aws-region>` when
+promoting a macOS AMI that was not created through `crabbox image create`.
+
 ## Static Mac
 
 Static Mac targets are existing machines:
@@ -52,9 +56,9 @@ provider: ssh
 target: macos
 static:
   host: mac-studio.tailnet-name.ts.net
-  user: steipete
+  user: alice
   port: "22"
-  workRoot: /Users/steipete/crabbox
+  workRoot: /Users/alice/crabbox
 ```
 
 ```sh

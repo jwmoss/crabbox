@@ -4,7 +4,7 @@ Read when:
 
 - baking a new Crabbox AWS image;
 - promoting or rolling back the default AWS image;
-- preparing a desktop/browser image for Mantis or other UI QA;
+- preparing a desktop/browser image for UI QA;
 - checking whether state belongs in the image or in a warm lease.
 
 This runbook is for trusted operators. Image commands need coordinator admin
@@ -15,13 +15,13 @@ auth and can create provider-side artifacts that cost money until cleaned up.
 Use names that identify owner, purpose, and UTC bake time:
 
 ```text
-openclaw-crabbox-linux-desktop-browser-YYYYMMDD-HHMM
-openclaw-mantis-linux-desktop-browser-YYYYMMDD-HHMM
+crabbox-linux-desktop-browser-YYYYMMDD-HHMM
+crabbox-macos-arm64-YYYYMMDD-HHMM
 ```
 
-Use a generic `openclaw-crabbox-*` image when the contents are useful to many
-repositories. Use `openclaw-mantis-*` only when the image is specifically tuned
-for OpenClaw Mantis QA.
+Use names that make the target and architecture obvious. A promoted macOS AMI
+is scoped separately from Linux and Windows images, but the name should still be
+human-auditable in the AWS console.
 
 ## What To Bake
 
@@ -90,7 +90,7 @@ Create the candidate image:
 ```bash
 crabbox image create \
   --id <cbx_id> \
-  --name openclaw-crabbox-linux-desktop-browser-YYYYMMDD-HHMM \
+  --name crabbox-linux-desktop-browser-YYYYMMDD-HHMM \
   --wait \
   --json
 ```
@@ -133,7 +133,7 @@ crabbox run \
    test -d /work/crabbox'
 ```
 
-For Mantis images, also run a real desktop/browser proof:
+For desktop/browser images, also run a real desktop/browser proof:
 
 ```bash
 crabbox screenshot --provider aws --id <candidate-cbx_id-or-slug> --output /tmp/crabbox-image-smoke.png
@@ -171,6 +171,60 @@ crabbox run \
 
 Keep the previous promoted AMI available until at least one normal brokered
 lease and one relevant QA lane pass on the new image.
+
+## macOS Images
+
+macOS images use the same `image create` command, but the source lease must be
+an AWS EC2 Mac lease on an allocated Dedicated Host:
+
+```bash
+CRABBOX_AWS_MAC_HOST_ID=h-... \
+crabbox warmup \
+  --provider aws \
+  --target macos \
+  --type mac2.metal \
+  --market on-demand \
+  --desktop \
+  --ttl 2h \
+  --idle-timeout 30m
+```
+
+Verify the source lease before creating the AMI:
+
+```bash
+crabbox run \
+  --provider aws \
+  --target macos \
+  --id <cbx_id> \
+  --no-sync \
+  --shell -- \
+  'set -euo pipefail
+   sw_vers
+   command -v ssh
+   command -v git
+   command -v rsync
+   command -v curl
+   test -d "$HOME/crabbox"
+   test -w "$HOME/crabbox"
+   nc -z 127.0.0.1 5900'
+```
+
+Then create and promote the candidate:
+
+```bash
+crabbox image create \
+  --id <cbx_id> \
+  --name crabbox-macos-arm64-YYYYMMDD-HHMM \
+  --wait \
+  --json
+
+crabbox image promote ami-1234567890abcdef0 --target macos --region us-east-1 --json
+```
+
+Crabbox scopes promoted AWS images by target, architecture, and region. A macOS
+promotion is only selected by matching `target=macos` leases, so it will not
+replace the Linux or Windows default. If you promote an AMI that was not created
+through `crabbox image create`, pass both `--target macos` and `--region`.
 
 ## Roll Back
 

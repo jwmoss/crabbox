@@ -821,6 +821,10 @@ func TestCoordinatorImageCreateAndPromote(t *testing.T) {
 		Name     string `json:"name"`
 		NoReboot bool   `json:"noReboot"`
 	}
+	var promoteBody struct {
+		Target string `json:"target"`
+		Region string `json:"region"`
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -837,6 +841,9 @@ func TestCoordinatorImageCreateAndPromote(t *testing.T) {
 		case "/v1/images/ami-12345678/promote":
 			if r.Method != http.MethodPost {
 				t.Fatalf("method=%s", r.Method)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&promoteBody); err != nil {
+				t.Fatal(err)
 			}
 			_, _ = w.Write([]byte(`{"image":{"id":"ami-12345678","name":"openclaw-crabbox-test","state":"available","region":"eu-west-1","promotedAt":"2026-05-01T12:46:00Z"}}`))
 		default:
@@ -856,8 +863,11 @@ func TestCoordinatorImageCreateAndPromote(t *testing.T) {
 	if image, err := client.Image(context.Background(), "ami-12345678"); err != nil || image.State != "available" {
 		t.Fatalf("image=%#v err=%v", image, err)
 	}
-	if promoted, err := client.PromoteImage(context.Background(), "ami-12345678"); err != nil || promoted.PromotedAt == "" {
+	if promoted, err := client.PromoteImage(context.Background(), "ami-12345678", "macos", "us-east-1"); err != nil || promoted.PromotedAt == "" {
 		t.Fatalf("promoted=%#v err=%v", promoted, err)
+	}
+	if promoteBody.Target != "macos" || promoteBody.Region != "us-east-1" {
+		t.Fatalf("promote body=%#v", promoteBody)
 	}
 }
 
