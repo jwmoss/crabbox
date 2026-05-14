@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/aes"
-	"crypto/des"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/binary"
@@ -22,10 +21,9 @@ import (
 )
 
 const (
-	rfbSecurityNone    = 1
-	rfbSecurityVNCAuth = 2
-	rfbSecurityARD     = 30
-	rfbEncodingRaw     = 0
+	rfbSecurityNone = 1
+	rfbSecurityARD  = 30
+	rfbEncodingRaw  = 0
 )
 
 type rfbCredentials struct {
@@ -108,10 +106,6 @@ func captureRFBFrameFromConn(ctx context.Context, conn net.Conn, creds rfbCreden
 	}
 	switch securityType {
 	case rfbSecurityNone:
-	case rfbSecurityVNCAuth:
-		if err := negotiateRFBVNCAuth(conn, creds.Password); err != nil {
-			return nil, err
-		}
 	case rfbSecurityARD:
 		if err := negotiateRFBARDAuth(conn, creds); err != nil {
 			return nil, err
@@ -169,7 +163,7 @@ func negotiateRFBSecurityType(conn net.Conn) (byte, error) {
 	}
 	for _, preferred := range types {
 		switch preferred {
-		case rfbSecurityARD, rfbSecurityVNCAuth, rfbSecurityNone:
+		case rfbSecurityARD, rfbSecurityNone:
 			if _, err := conn.Write([]byte{preferred}); err != nil {
 				return 0, fmt.Errorf("write RFB security type: %w", err)
 			}
@@ -177,21 +171,6 @@ func negotiateRFBSecurityType(conn net.Conn) (byte, error) {
 		}
 	}
 	return 0, fmt.Errorf("unsupported RFB security types %v", types)
-}
-
-func negotiateRFBVNCAuth(conn net.Conn, password string) error {
-	challenge := make([]byte, 16)
-	if _, err := io.ReadFull(conn, challenge); err != nil {
-		return fmt.Errorf("read VNC auth challenge: %w", err)
-	}
-	response, err := vncAuthResponse(password, challenge)
-	if err != nil {
-		return err
-	}
-	if _, err := conn.Write(response); err != nil {
-		return fmt.Errorf("write VNC auth response: %w", err)
-	}
-	return nil
 }
 
 func negotiateRFBARDAuth(conn net.Conn, creds rfbCredentials) error {
@@ -413,25 +392,6 @@ func discardRFBServerCutText(conn net.Conn) error {
 	return nil
 }
 
-func vncAuthResponse(password string, challenge []byte) ([]byte, error) {
-	if len(challenge) != 16 {
-		return nil, fmt.Errorf("VNC auth challenge must be 16 bytes")
-	}
-	key := make([]byte, 8)
-	copy(key, []byte(password))
-	for i := range key {
-		key[i] = reverseBits(key[i])
-	}
-	block, err := des.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("create VNC DES cipher: %w", err)
-	}
-	response := make([]byte, 16)
-	block.Encrypt(response[:8], challenge[:8])
-	block.Encrypt(response[8:], challenge[8:])
-	return response, nil
-}
-
 func ardCredentialsBlock(creds rfbCredentials) ([]byte, error) {
 	username := []byte(creds.Username)
 	password := []byte(creds.Password)
@@ -475,11 +435,4 @@ func leftPadBigInt(value *big.Int, length int) []byte {
 	}
 	copy(out[length-len(bytes):], bytes)
 	return out
-}
-
-func reverseBits(value byte) byte {
-	value = (value&0xF0)>>4 | (value&0x0F)<<4
-	value = (value&0xCC)>>2 | (value&0x33)<<2
-	value = (value&0xAA)>>1 | (value&0x55)<<1
-	return value
 }
