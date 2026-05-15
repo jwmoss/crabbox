@@ -188,6 +188,12 @@ type CoordinatorMacHost struct {
 	Tags             map[string]string `json:"tags,omitempty"`
 }
 
+type CoordinatorMacHostOffering struct {
+	Region           string `json:"region"`
+	AvailabilityZone string `json:"availabilityZone"`
+	InstanceType     string `json:"instanceType"`
+}
+
 type CoordinatorGitHubLoginStart struct {
 	LoginID   string `json:"loginID"`
 	URL       string `json:"url"`
@@ -932,6 +938,25 @@ func (c *CoordinatorClient) AdminMacHosts(ctx context.Context, region, serverTyp
 	return res.Hosts, err
 }
 
+func (c *CoordinatorClient) AdminMacHostOfferings(ctx context.Context, region, serverType string) ([]CoordinatorMacHostOffering, error) {
+	var res struct {
+		Offerings []CoordinatorMacHostOffering `json:"offerings"`
+	}
+	values := url.Values{}
+	if region != "" {
+		values.Set("region", region)
+	}
+	if serverType != "" {
+		values.Set("type", serverType)
+	}
+	path := "/v1/admin/mac-hosts/offerings"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	err := c.do(ctx, http.MethodGet, path, nil, &res)
+	return res.Offerings, err
+}
+
 func (c *CoordinatorClient) AdminAllocateMacHost(ctx context.Context, region, serverType, availabilityZone string) ([]CoordinatorMacHost, error) {
 	var res struct {
 		Hosts []CoordinatorMacHost `json:"hosts"`
@@ -944,10 +969,11 @@ func (c *CoordinatorClient) AdminAllocateMacHost(ctx context.Context, region, se
 	if encoded := values.Encode(); encoded != "" {
 		path += "?" + encoded
 	}
-	err := c.do(ctx, http.MethodPost, path, map[string]any{
-		"type":             serverType,
-		"availabilityZone": availabilityZone,
-	}, &res)
+	body := map[string]any{"type": serverType}
+	if availabilityZone != "" {
+		body["availabilityZone"] = availabilityZone
+	}
+	err := c.do(ctx, http.MethodPost, path, body, &res)
 	return res.Hosts, err
 }
 

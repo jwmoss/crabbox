@@ -50,7 +50,8 @@ explicitly:
 
 ```sh
 crabbox admin mac-hosts list --region eu-west-1
-crabbox admin mac-hosts allocate --region eu-west-1 --availability-zone eu-west-1a --type mac2.metal --force
+crabbox admin mac-hosts offerings --region eu-west-1 --type mac2.metal
+crabbox admin mac-hosts allocate --region eu-west-1 --type mac2.metal --force
 crabbox admin mac-hosts release h-0123456789abcdef0 --region eu-west-1 --force
 ```
 
@@ -91,7 +92,8 @@ Missing host capacity
 Use `--market on-demand` and verify an available EC2 Mac Dedicated Host is
 allocated in the selected AWS region. Set `CRABBOX_AWS_MAC_HOST_ID` or
 `aws.macHostId` only when you want to pin to a specific host. Trusted operators
-can check availability with `crabbox admin mac-hosts list --region <region>`.
+can check host offerings with `crabbox admin mac-hosts offerings --region <region>` and
+allocated hosts with `crabbox admin mac-hosts list --region <region>`.
 
 VNC prompt asks for host credentials
 

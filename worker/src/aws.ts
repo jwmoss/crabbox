@@ -30,6 +30,12 @@ export interface AWSMacHost {
   tags: Record<string, string>;
 }
 
+export interface AWSMacHostOffering {
+  region: string;
+  availabilityZone: string;
+  instanceType: string;
+}
+
 export function createSecurityGroupParams(name: string, vpcID: string): Record<string, string> {
   return {
     GroupDescription: "Crabbox ephemeral test runners",
@@ -350,6 +356,15 @@ export class EC2SpotClient {
     return items(record(root["hostSet"])["item"])
       .map((host) => this.macHostFromDescribeHost(host))
       .filter((host) => host.instanceType.startsWith("mac"));
+  }
+
+  async listMacHostOfferings(serverType = "mac2.metal"): Promise<AWSMacHostOffering[]> {
+    const root = await this.ec2("DescribeInstanceTypeOfferings", {
+      LocationType: "availability-zone",
+      "Filter.1.Name": "instance-type",
+      "Filter.1.Value.1": serverType,
+    });
+    return awsMacHostOfferingsFromDescribeInstanceTypeOfferings(root, this.region);
   }
 
   async allocateMacHost(
@@ -871,6 +886,39 @@ export function awsHostIDsFromSet(input: unknown): string[] {
   return items(record(input)["item"])
     .map((item) => asString(record(item)["hostId"]) || asString(item))
     .filter(Boolean);
+}
+
+export function awsMacHostOfferingsFromDescribeInstanceTypeOfferings(
+  root: Record<string, unknown>,
+  region: string,
+): AWSMacHostOffering[] {
+  const seen = new Set<string>();
+  return items(record(root["instanceTypeOfferingSet"])["item"])
+    .map(record)
+    .map((item) => ({
+      region,
+      availabilityZone: asString(item["location"]),
+      instanceType: asString(item["instanceType"]),
+    }))
+    .filter((offering) => {
+      if (
+        !offering.availabilityZone.startsWith(region) ||
+        !offering.instanceType.startsWith("mac") ||
+        !offering.instanceType.endsWith(".metal")
+      ) {
+        return false;
+      }
+      const key = `${offering.availabilityZone}\0${offering.instanceType}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .toSorted((left, right) => {
+      const azCompare = left.availabilityZone.localeCompare(right.availabilityZone);
+      return azCompare || left.instanceType.localeCompare(right.instanceType);
+    });
 }
 
 function tagMap(input: unknown): Record<string, string> {

@@ -88,17 +88,19 @@ func leaseAuditCleanupSummary(audit CoordinatorLeaseCloudAudit) string {
 func (a App) adminMacHosts(ctx context.Context, args []string) error {
 	args = stripKongCommandPath(args, "admin", "mac-hosts")
 	if len(args) == 0 || isHelpArg(args[0]) {
-		return exit(2, "usage: crabbox admin mac-hosts <list|allocate|release> [flags]")
+		return exit(2, "usage: crabbox admin mac-hosts <list|offerings|allocate|release> [flags]")
 	}
 	switch args[0] {
 	case "list":
 		return a.adminMacHostsList(ctx, args[1:])
+	case "offerings":
+		return a.adminMacHostOfferings(ctx, args[1:])
 	case "allocate":
 		return a.adminMacHostsAllocate(ctx, args[1:])
 	case "release":
 		return a.adminMacHostsRelease(ctx, args[1:])
 	default:
-		return exit(2, "usage: crabbox admin mac-hosts <list|allocate|release> [flags]")
+		return exit(2, "usage: crabbox admin mac-hosts <list|offerings|allocate|release> [flags]")
 	}
 }
 
@@ -130,6 +132,32 @@ func (a App) adminMacHostsList(ctx context.Context, args []string) error {
 	return nil
 }
 
+func (a App) adminMacHostOfferings(ctx context.Context, args []string) error {
+	fs := newFlagSet("admin mac-hosts offerings", a.Stderr)
+	region := fs.String("region", "", "AWS region")
+	serverType := fs.String("type", "mac2.metal", "EC2 Mac instance type")
+	jsonOut := fs.Bool("json", false, "print JSON")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	coord, err := configuredAdminCoordinator()
+	if err != nil {
+		return err
+	}
+	offerings, err := coord.AdminMacHostOfferings(ctx, *region, *serverType)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return json.NewEncoder(a.Stdout).Encode(offerings)
+	}
+	for _, offering := range offerings {
+		fmt.Fprintf(a.Stdout, "%-12s %-14s %-12s\n",
+			offering.Region, offering.AvailabilityZone, offering.InstanceType)
+	}
+	return nil
+}
+
 func (a App) adminMacHostsAllocate(ctx context.Context, args []string) error {
 	args, forceAnywhere := extractBoolFlag(args, "force")
 	args, jsonAnywhere := extractBoolFlag(args, "json")
@@ -150,9 +178,6 @@ func (a App) adminMacHostsAllocate(ctx context.Context, args []string) error {
 	}
 	if !*force {
 		return exit(2, "admin mac-hosts allocate requires --force")
-	}
-	if strings.TrimSpace(*availabilityZone) == "" {
-		return exit(2, "usage: crabbox admin mac-hosts allocate --availability-zone <az> [--region <region>] [--type mac2.metal] --force")
 	}
 	coord, err := configuredAdminCoordinator()
 	if err != nil {

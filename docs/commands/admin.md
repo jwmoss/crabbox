@@ -7,8 +7,9 @@ crabbox admin leases
 crabbox admin leases --state active --json
 crabbox admin lease-audit --state expired --provider aws
 crabbox admin lease-audit --fail-on-live
+crabbox admin mac-hosts offerings --region eu-west-1 --type mac2.metal
 crabbox admin mac-hosts list --region eu-west-1
-crabbox admin mac-hosts allocate --region eu-west-1 --availability-zone eu-west-1a --type mac2.metal --force
+crabbox admin mac-hosts allocate --region eu-west-1 --type mac2.metal --force
 crabbox admin mac-hosts release h-0123456789abcdef0 --region eu-west-1 --force
 crabbox admin release blue-lobster
 crabbox admin release blue-lobster --delete
@@ -55,8 +56,9 @@ Flags:
 
 ## mac-hosts
 
-List, allocate, or release AWS EC2 Mac Dedicated Hosts through the coordinator.
-`list` is read-only. `allocate` and `release` require `--force` because EC2 Mac
+List offerings, list hosts, allocate hosts, or release AWS EC2 Mac Dedicated
+Hosts through the coordinator. `offerings` and `list` are read-only. `allocate`
+and `release` require `--force` because EC2 Mac
 Dedicated Hosts are billed separately from Crabbox leases and have AWS lifecycle
 constraints.
 
@@ -69,9 +71,14 @@ list:
   --state <state>       filter by host state
   --json                print JSON
 
+offerings:
+  --region <region>     AWS region
+  --type <type>         default mac2.metal
+  --json                print JSON
+
 allocate:
   --region <region>             AWS region
-  --availability-zone <az>      required, for example eu-west-1a
+  --availability-zone <az>      optional; omitted means discover and try offered AZs
   --type <type>                 default mac2.metal
   --force                       confirm host allocation
   --json                        print JSON

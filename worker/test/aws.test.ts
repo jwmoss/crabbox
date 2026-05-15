@@ -9,6 +9,7 @@ import {
   awsHostIDsFromSet,
   awsLaunchCandidates,
   awsMacHostIDFromDescribeHosts,
+  awsMacHostOfferingsFromDescribeInstanceTypeOfferings,
   awsProvisioningErrorCategory,
   awsQuotaCodeForMarket,
   awsQuotaPreflightAttempt,
@@ -199,6 +200,43 @@ describe("aws provider", () => {
         item: [{ hostId: "h-000000000001" }, { hostId: "h-000000000002" }],
       }),
     ).toEqual(["h-000000000001", "h-000000000002"]);
+  });
+
+  it("parses EC2 Mac instance type offerings by availability zone", () => {
+    expect(
+      awsMacHostOfferingsFromDescribeInstanceTypeOfferings(
+        {
+          instanceTypeOfferingSet: {
+            item: [
+              {
+                instanceType: "mac2.metal",
+                location: "eu-west-1b",
+                locationType: "availability-zone",
+              },
+              {
+                instanceType: "mac2.metal",
+                location: "eu-west-1a",
+                locationType: "availability-zone",
+              },
+              {
+                instanceType: "m7i.large",
+                location: "eu-west-1a",
+                locationType: "availability-zone",
+              },
+              {
+                instanceType: "mac2.metal",
+                location: "us-east-1a",
+                locationType: "availability-zone",
+              },
+            ],
+          },
+        },
+        "eu-west-1",
+      ),
+    ).toEqual([
+      { region: "eu-west-1", availabilityZone: "eu-west-1a", instanceType: "mac2.metal" },
+      { region: "eu-west-1", availabilityZone: "eu-west-1b", instanceType: "mac2.metal" },
+    ]);
   });
 
   it("treats missing stale AWS instance cleanup as cleaned", () => {

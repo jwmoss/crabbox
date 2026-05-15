@@ -2594,6 +2594,17 @@ export class FleetDurableObject implements DurableObject {
       );
     }
     const client = new EC2SpotClient(this.env, region);
+    if (method === "GET" && hostID === "offerings") {
+      const serverType = (url.searchParams.get("type") ?? "mac2.metal").trim();
+      if (!serverType.startsWith("mac") || !serverType.endsWith(".metal")) {
+        return json(
+          { error: "invalid_type", message: "type must be an EC2 Mac metal instance type" },
+          { status: 400 },
+        );
+      }
+      const offerings = await client.listMacHostOfferings(serverType);
+      return json({ offerings });
+    }
     if (method === "GET" && !hostID) {
       const serverType = (url.searchParams.get("type") ?? "").trim();
       const state = (url.searchParams.get("state") ?? "").trim();
@@ -2614,7 +2625,7 @@ export class FleetDurableObject implements DurableObject {
         );
       }
       const availabilityZone = input.availabilityZone?.trim().toLowerCase() ?? "";
-      if (!availabilityZone || !availabilityZone.startsWith(region)) {
+      if (availabilityZone && !availabilityZone.startsWith(region)) {
         return json(
           {
             error: "invalid_availability_zone",
@@ -2624,6 +2635,44 @@ export class FleetDurableObject implements DurableObject {
         );
       }
       const clientToken = input.clientToken?.trim() || `crabbox-mac-host-${newLeaseID().slice(4)}`;
+      if (!availabilityZone) {
+        const offerings = await client.listMacHostOfferings(serverType);
+        if (offerings.length === 0) {
+          return json(
+            {
+              error: "no_mac_host_offerings",
+              message: `no EC2 Mac host offerings found in ${region} for ${serverType}`,
+            },
+            { status: 400 },
+          );
+        }
+        const failures: string[] = [];
+        for (const offering of offerings) {
+          try {
+            // oxlint-disable-next-line eslint/no-await-in-loop -- Mac host allocation can bill capacity; try one AZ at a time.
+            const hosts = await client.allocateMacHost(
+              serverType,
+              offering.availabilityZone,
+              `${clientToken}-${offering.availabilityZone.replaceAll("-", "")}`,
+            );
+            return json(
+              { hosts, availabilityZone: offering.availabilityZone, offerings },
+              { status: 201 },
+            );
+          } catch (error) {
+            const message = errorMessage(error);
+            failures.push(`${offering.availabilityZone}: ${message}`);
+          }
+        }
+        return json(
+          {
+            error: "mac_host_allocation_failed",
+            message: failures.join("; "),
+            offerings,
+          },
+          { status: 502 },
+        );
+      }
       const hosts = await client.allocateMacHost(serverType, availabilityZone, clientToken);
       return json({ hosts }, { status: 201 });
     }

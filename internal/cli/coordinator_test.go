@@ -270,6 +270,14 @@ func TestCoordinatorAdminMacHosts(t *testing.T) {
 				t.Fatalf("state query=%q", got)
 			}
 			_, _ = w.Write([]byte(`{"hosts":[{"id":"h-000000000001","state":"available","region":"eu-west-1","availabilityZone":"eu-west-1a","instanceType":"mac2.metal","autoPlacement":"off"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/admin/mac-hosts/offerings":
+			if got := r.URL.Query().Get("region"); got != "eu-west-1" {
+				t.Fatalf("offerings region query=%q", got)
+			}
+			if got := r.URL.Query().Get("type"); got != "mac2.metal" {
+				t.Fatalf("offerings type query=%q", got)
+			}
+			_, _ = w.Write([]byte(`{"offerings":[{"region":"eu-west-1","availabilityZone":"eu-west-1a","instanceType":"mac2.metal"}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/admin/mac-hosts":
 			if got := r.URL.Query().Get("region"); got != "eu-west-1" {
 				t.Fatalf("allocate region query=%q", got)
@@ -297,6 +305,13 @@ func TestCoordinatorAdminMacHosts(t *testing.T) {
 	if len(hosts) != 1 || hosts[0].ID != "h-000000000001" || hosts[0].InstanceType != "mac2.metal" {
 		t.Fatalf("hosts=%#v", hosts)
 	}
+	offerings, err := client.AdminMacHostOfferings(context.Background(), "eu-west-1", "mac2.metal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offerings) != 1 || offerings[0].AvailabilityZone != "eu-west-1a" {
+		t.Fatalf("offerings=%#v", offerings)
+	}
 	allocated, err := client.AdminAllocateMacHost(context.Background(), "eu-west-1", "mac1.metal", "eu-west-1b")
 	if err != nil {
 		t.Fatal(err)
@@ -314,7 +329,7 @@ func TestCoordinatorAdminMacHosts(t *testing.T) {
 	if !reflect.DeepEqual(released, []string{"h-000000000002"}) {
 		t.Fatalf("released=%#v", released)
 	}
-	if len(seen) != 3 {
+	if len(seen) != 4 {
 		t.Fatalf("seen=%#v", seen)
 	}
 }
