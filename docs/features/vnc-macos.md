@@ -51,6 +51,7 @@ explicitly:
 ```sh
 crabbox admin mac-hosts list --region eu-west-1
 crabbox admin mac-hosts offerings --region eu-west-1 --type mac2.metal
+crabbox admin mac-hosts allocate --region eu-west-1 --type mac2.metal --dry-run
 crabbox admin mac-hosts allocate --region eu-west-1 --type mac2.metal --force
 crabbox admin mac-hosts release h-0123456789abcdef0 --region eu-west-1 --force
 ```

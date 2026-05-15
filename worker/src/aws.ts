@@ -36,6 +36,14 @@ export interface AWSMacHostOffering {
   instanceType: string;
 }
 
+export interface AWSMacHostAllocationDryRun {
+  region: string;
+  availabilityZone: string;
+  instanceType: string;
+  ok: boolean;
+  message: string;
+}
+
 export function createSecurityGroupParams(name: string, vpcID: string): Record<string, string> {
   return {
     GroupDescription: "Crabbox ephemeral test runners",
@@ -372,20 +380,7 @@ export class EC2SpotClient {
     availabilityZone: string,
     clientToken: string,
   ): Promise<AWSMacHost[]> {
-    const params: Record<string, string> = {
-      AutoPlacement: "off",
-      ClientToken: clientToken,
-      InstanceType: serverType,
-      Quantity: "1",
-      "TagSpecification.1.ResourceType": "dedicated-host",
-      "TagSpecification.1.Tag.1.Key": "crabbox",
-      "TagSpecification.1.Tag.1.Value": "true",
-      "TagSpecification.1.Tag.2.Key": "created_by",
-      "TagSpecification.1.Tag.2.Value": "crabbox",
-    };
-    if (availabilityZone) {
-      params["AvailabilityZone"] = availabilityZone;
-    }
+    const params = this.allocateMacHostParams(serverType, availabilityZone, clientToken);
     const root = await this.ec2("AllocateHosts", params);
     const hostIDs = awsHostIDsFromSet(root["hostIdSet"]);
     if (hostIDs.length === 0) {
@@ -405,10 +400,61 @@ export class EC2SpotClient {
         }));
   }
 
+  async dryRunAllocateMacHost(
+    serverType: string,
+    availabilityZone: string,
+    clientToken: string,
+  ): Promise<AWSMacHostAllocationDryRun> {
+    try {
+      await this.ec2("AllocateHosts", {
+        ...this.allocateMacHostParams(serverType, availabilityZone, clientToken),
+        DryRun: "true",
+      });
+      return {
+        region: this.region,
+        availabilityZone,
+        instanceType: serverType,
+        ok: true,
+        message: "dry run accepted",
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        region: this.region,
+        availabilityZone,
+        instanceType: serverType,
+        ok: message.includes("DryRunOperation"),
+        message,
+      };
+    }
+  }
+
   async releaseMacHost(hostID: string): Promise<string[]> {
     const root = await this.ec2("ReleaseHosts", { "HostId.1": hostID });
     const released = awsHostIDsFromSet(root["hostIdSet"]);
     return released.length > 0 ? released : [hostID];
+  }
+
+  private allocateMacHostParams(
+    serverType: string,
+    availabilityZone: string,
+    clientToken: string,
+  ): Record<string, string> {
+    const params: Record<string, string> = {
+      AutoPlacement: "off",
+      ClientToken: clientToken,
+      InstanceType: serverType,
+      Quantity: "1",
+      "TagSpecification.1.ResourceType": "dedicated-host",
+      "TagSpecification.1.Tag.1.Key": "crabbox",
+      "TagSpecification.1.Tag.1.Value": "true",
+      "TagSpecification.1.Tag.2.Key": "created_by",
+      "TagSpecification.1.Tag.2.Value": "crabbox",
+    };
+    if (availabilityZone) {
+      params["AvailabilityZone"] = availabilityZone;
+    }
+    return params;
   }
 
   private async deleteSnapshotWithRetry(snapshotID: string): Promise<void> {

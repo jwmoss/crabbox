@@ -161,10 +161,12 @@ func (a App) adminMacHostOfferings(ctx context.Context, args []string) error {
 func (a App) adminMacHostsAllocate(ctx context.Context, args []string) error {
 	args, forceAnywhere := extractBoolFlag(args, "force")
 	args, jsonAnywhere := extractBoolFlag(args, "json")
+	args, dryRunAnywhere := extractBoolFlag(args, "dry-run")
 	fs := newFlagSet("admin mac-hosts allocate", a.Stderr)
 	region := fs.String("region", "", "AWS region")
 	serverType := fs.String("type", "mac2.metal", "EC2 Mac instance type")
 	availabilityZone := fs.String("availability-zone", "", "AWS availability zone")
+	dryRun := fs.Bool("dry-run", false, "validate allocation request without allocating a host")
 	force := fs.Bool("force", false, "confirm host allocation")
 	jsonOut := fs.Bool("json", false, "print JSON")
 	if err := parseFlags(fs, args); err != nil {
@@ -176,12 +178,33 @@ func (a App) adminMacHostsAllocate(ctx context.Context, args []string) error {
 	if jsonAnywhere {
 		*jsonOut = true
 	}
-	if !*force {
+	if dryRunAnywhere {
+		*dryRun = true
+	}
+	if !*dryRun && !*force {
 		return exit(2, "admin mac-hosts allocate requires --force")
 	}
 	coord, err := configuredAdminCoordinator()
 	if err != nil {
 		return err
+	}
+	if *dryRun {
+		checks, err := coord.AdminDryRunAllocateMacHost(ctx, *region, *serverType, *availabilityZone)
+		if err != nil {
+			return err
+		}
+		if *jsonOut {
+			return json.NewEncoder(a.Stdout).Encode(checks)
+		}
+		for _, check := range checks {
+			status := "blocked"
+			if check.OK {
+				status = "ok"
+			}
+			fmt.Fprintf(a.Stdout, "dry-run %s region=%s az=%s type=%s message=%s\n",
+				status, check.Region, check.AvailabilityZone, check.InstanceType, blank(check.Message, "-"))
+		}
+		return nil
 	}
 	hosts, err := coord.AdminAllocateMacHost(ctx, *region, *serverType, *availabilityZone)
 	if err != nil {

@@ -194,6 +194,14 @@ type CoordinatorMacHostOffering struct {
 	InstanceType     string `json:"instanceType"`
 }
 
+type CoordinatorMacHostAllocationDryRun struct {
+	Region           string `json:"region"`
+	AvailabilityZone string `json:"availabilityZone"`
+	InstanceType     string `json:"instanceType"`
+	OK               bool   `json:"ok"`
+	Message          string `json:"message"`
+}
+
 type CoordinatorGitHubLoginStart struct {
 	LoginID   string `json:"loginID"`
 	URL       string `json:"url"`
@@ -975,6 +983,26 @@ func (c *CoordinatorClient) AdminAllocateMacHost(ctx context.Context, region, se
 	}
 	err := c.do(ctx, http.MethodPost, path, body, &res)
 	return res.Hosts, err
+}
+
+func (c *CoordinatorClient) AdminDryRunAllocateMacHost(ctx context.Context, region, serverType, availabilityZone string) ([]CoordinatorMacHostAllocationDryRun, error) {
+	var res struct {
+		Checks []CoordinatorMacHostAllocationDryRun `json:"checks"`
+	}
+	values := url.Values{}
+	if region != "" {
+		values.Set("region", region)
+	}
+	path := "/v1/admin/mac-hosts/dry-run"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	body := map[string]any{"type": serverType}
+	if availabilityZone != "" {
+		body["availabilityZone"] = availabilityZone
+	}
+	err := c.do(ctx, http.MethodPost, path, body, &res)
+	return res.Checks, err
 }
 
 func (c *CoordinatorClient) AdminReleaseMacHost(ctx context.Context, region, hostID string) ([]string, error) {

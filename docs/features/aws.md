@@ -110,9 +110,15 @@ EC2 Mac host lifecycle is explicit operator work:
 ```sh
 crabbox admin mac-hosts list --region eu-west-1
 crabbox admin mac-hosts offerings --region eu-west-1 --type mac2.metal
+crabbox admin mac-hosts allocate --region eu-west-1 --type mac2.metal --dry-run
 crabbox admin mac-hosts allocate --region eu-west-1 --type mac2.metal --force
 crabbox admin mac-hosts release h-0123456789abcdef0 --region eu-west-1 --force
 ```
+
+The coordinator AWS identity needs `ec2:DescribeInstanceTypeOfferings`,
+`ec2:DescribeHosts`, `ec2:AllocateHosts`, and `ec2:ReleaseHosts` for these
+admin commands. Use `allocate --dry-run` first; it validates the request path
+without creating a Dedicated Host.
 
 CLI/direct env and config:
 

@@ -2430,6 +2430,76 @@ describe("fleet lease identity and idle", () => {
     });
   });
 
+  it("dry-runs AWS EC2 Mac host allocation through an admin route", async () => {
+    const actions: string[] = [];
+    const seenParams: Record<string, string>[] = [];
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async (input, init) => {
+        const params = new URLSearchParams(await requestBodyForTest(input, init));
+        const action = params.get("Action") ?? "";
+        actions.push(action);
+        seenParams.push(Object.fromEntries(params));
+        if (action === "DescribeInstanceTypeOfferings") {
+          return ec2XMLResponse(`<?xml version="1.0" encoding="UTF-8"?>
+          <DescribeInstanceTypeOfferingsResponse>
+            <instanceTypeOfferingSet>
+              <item>
+                <instanceType>mac2.metal</instanceType>
+                <location>eu-west-1a</location>
+                <locationType>availability-zone</locationType>
+              </item>
+            </instanceTypeOfferingSet>
+          </DescribeInstanceTypeOfferingsResponse>`);
+        }
+        if (action === "AllocateHosts") {
+          return ec2XMLResponse(
+            `<?xml version="1.0" encoding="UTF-8"?>
+          <Response>
+            <Errors>
+              <Error>
+                <Code>DryRunOperation</Code>
+                <Message>Request would have succeeded, but DryRun flag is set.</Message>
+              </Error>
+            </Errors>
+          </Response>`,
+            412,
+          );
+        }
+        return ec2XMLResponse("<ErrorResponse />", 500);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const fleet = testFleet(
+      new MemoryStorage(),
+      {},
+      {
+        AWS_ACCESS_KEY_ID: "test",
+        AWS_SECRET_ACCESS_KEY: "test",
+        CRABBOX_AWS_REGION: "eu-west-1",
+      },
+    );
+
+    const response = await fleet.fetch(
+      request("POST", "/v1/admin/mac-hosts/dry-run?region=eu-west-1", {
+        headers: { "x-crabbox-admin": "true" },
+        body: { type: "mac2.metal" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(actions).toEqual(["DescribeInstanceTypeOfferings", "AllocateHosts"]);
+    expect(seenParams[1]).toMatchObject({
+      Action: "AllocateHosts",
+      AvailabilityZone: "eu-west-1a",
+      DryRun: "true",
+      InstanceType: "mac2.metal",
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      dryRun: true,
+      checks: [{ availabilityZone: "eu-west-1a", ok: true, instanceType: "mac2.metal" }],
+    });
+  });
+
   it("discovers an availability zone before allocating an AWS EC2 Mac Dedicated Host", async () => {
     const actions: string[] = [];
     const seenParams: Record<string, string>[] = [];

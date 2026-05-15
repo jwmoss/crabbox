@@ -9,6 +9,7 @@ crabbox admin lease-audit --state expired --provider aws
 crabbox admin lease-audit --fail-on-live
 crabbox admin mac-hosts offerings --region eu-west-1 --type mac2.metal
 crabbox admin mac-hosts list --region eu-west-1
+crabbox admin mac-hosts allocate --region eu-west-1 --type mac2.metal --dry-run
 crabbox admin mac-hosts allocate --region eu-west-1 --type mac2.metal --force
 crabbox admin mac-hosts release h-0123456789abcdef0 --region eu-west-1 --force
 crabbox admin release blue-lobster
@@ -57,10 +58,14 @@ Flags:
 ## mac-hosts
 
 List offerings, list hosts, allocate hosts, or release AWS EC2 Mac Dedicated
-Hosts through the coordinator. `offerings` and `list` are read-only. `allocate`
-and `release` require `--force` because EC2 Mac
+Hosts through the coordinator. `offerings`, `list`, and `allocate --dry-run`
+are read-only. Real `allocate` and `release` require `--force` because EC2 Mac
 Dedicated Hosts are billed separately from Crabbox leases and have AWS lifecycle
 constraints.
+
+The coordinator AWS identity must allow `ec2:DescribeInstanceTypeOfferings`,
+`ec2:DescribeHosts`, `ec2:AllocateHosts`, and `ec2:ReleaseHosts` for this
+command group.
 
 Flags:
 
@@ -80,6 +85,7 @@ allocate:
   --region <region>             AWS region
   --availability-zone <az>      optional; omitted means discover and try offered AZs
   --type <type>                 default mac2.metal
+  --dry-run                     validate the request without allocating a host
   --force                       confirm host allocation
   --json                        print JSON
 

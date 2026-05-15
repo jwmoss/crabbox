@@ -2611,6 +2611,53 @@ export class FleetDurableObject implements DurableObject {
       const hosts = await client.listMacHosts(serverType, state);
       return json({ hosts });
     }
+    if (method === "POST" && hostID === "dry-run") {
+      const input = await readJson<{
+        type?: string;
+        availabilityZone?: string;
+        clientToken?: string;
+      }>(request);
+      const serverType = (input.type ?? "mac2.metal").trim();
+      if (!serverType.startsWith("mac") || !serverType.endsWith(".metal")) {
+        return json(
+          { error: "invalid_type", message: "type must be an EC2 Mac metal instance type" },
+          { status: 400 },
+        );
+      }
+      const availabilityZone = input.availabilityZone?.trim().toLowerCase() ?? "";
+      if (availabilityZone && !availabilityZone.startsWith(region)) {
+        return json(
+          {
+            error: "invalid_availability_zone",
+            message: "availabilityZone must be an AWS availability zone in the selected region",
+          },
+          { status: 400 },
+        );
+      }
+      const offerings = availabilityZone
+        ? [{ region, availabilityZone, instanceType: serverType }]
+        : await client.listMacHostOfferings(serverType);
+      if (offerings.length === 0) {
+        return json(
+          {
+            error: "no_mac_host_offerings",
+            message: `no EC2 Mac host offerings found in ${region} for ${serverType}`,
+          },
+          { status: 400 },
+        );
+      }
+      const clientToken = input.clientToken?.trim() || `crabbox-mac-host-${newLeaseID().slice(4)}`;
+      const checks = await Promise.all(
+        offerings.map((offering) =>
+          client.dryRunAllocateMacHost(
+            serverType,
+            offering.availabilityZone,
+            `${clientToken}-${offering.availabilityZone.replaceAll("-", "")}`,
+          ),
+        ),
+      );
+      return json({ dryRun: true, checks, offerings });
+    }
     if (method === "POST" && !hostID) {
       const input = await readJson<{
         type?: string;

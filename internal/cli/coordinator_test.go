@@ -255,6 +255,7 @@ func TestCoordinatorAdminLeaseAudit(t *testing.T) {
 
 func TestCoordinatorAdminMacHosts(t *testing.T) {
 	var allocateBody map[string]string
+	var dryRunBody map[string]any
 	var seen []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.Method+" "+r.URL.String())
@@ -278,13 +279,23 @@ func TestCoordinatorAdminMacHosts(t *testing.T) {
 				t.Fatalf("offerings type query=%q", got)
 			}
 			_, _ = w.Write([]byte(`{"offerings":[{"region":"eu-west-1","availabilityZone":"eu-west-1a","instanceType":"mac2.metal"}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/admin/mac-hosts/dry-run":
+			if got := r.URL.Query().Get("region"); got != "eu-west-1" {
+				t.Fatalf("dry-run region query=%q", got)
+			}
+			if err := json.NewDecoder(r.Body).Decode(&dryRunBody); err != nil {
+				t.Fatal(err)
+			}
+			_, _ = w.Write([]byte(`{"checks":[{"region":"eu-west-1","availabilityZone":"eu-west-1a","instanceType":"mac2.metal","ok":true,"message":"dry run accepted"}]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/admin/mac-hosts":
 			if got := r.URL.Query().Get("region"); got != "eu-west-1" {
 				t.Fatalf("allocate region query=%q", got)
 			}
-			if err := json.NewDecoder(r.Body).Decode(&allocateBody); err != nil {
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatal(err)
 			}
+			allocateBody = mapStringString(body)
 			_, _ = w.Write([]byte(`{"hosts":[{"id":"h-000000000002","state":"available","region":"eu-west-1","availabilityZone":"eu-west-1b","instanceType":"mac1.metal","autoPlacement":"off"}]}`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/v1/admin/mac-hosts/h-000000000002":
 			if got := r.URL.Query().Get("region"); got != "eu-west-1" {
@@ -312,6 +323,16 @@ func TestCoordinatorAdminMacHosts(t *testing.T) {
 	if len(offerings) != 1 || offerings[0].AvailabilityZone != "eu-west-1a" {
 		t.Fatalf("offerings=%#v", offerings)
 	}
+	checks, err := client.AdminDryRunAllocateMacHost(context.Background(), "eu-west-1", "mac2.metal", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dryRunBody["type"] != "mac2.metal" || dryRunBody["dryRun"] != nil {
+		t.Fatalf("dryRunBody=%#v", dryRunBody)
+	}
+	if len(checks) != 1 || !checks[0].OK || checks[0].AvailabilityZone != "eu-west-1a" {
+		t.Fatalf("checks=%#v", checks)
+	}
 	allocated, err := client.AdminAllocateMacHost(context.Background(), "eu-west-1", "mac1.metal", "eu-west-1b")
 	if err != nil {
 		t.Fatal(err)
@@ -329,9 +350,19 @@ func TestCoordinatorAdminMacHosts(t *testing.T) {
 	if !reflect.DeepEqual(released, []string{"h-000000000002"}) {
 		t.Fatalf("released=%#v", released)
 	}
-	if len(seen) != 4 {
+	if len(seen) != 5 {
 		t.Fatalf("seen=%#v", seen)
 	}
+}
+
+func mapStringString(input map[string]any) map[string]string {
+	out := map[string]string{}
+	for key, value := range input {
+		if text, ok := value.(string); ok {
+			out[key] = text
+		}
+	}
+	return out
 }
 
 func TestHeartbeatRequestBodyOmitsIdleTimeoutForTouch(t *testing.T) {

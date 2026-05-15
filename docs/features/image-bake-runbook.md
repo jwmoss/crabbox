@@ -188,6 +188,11 @@ If no suitable host is available, allocate one explicitly before warmup:
 crabbox admin mac-hosts allocate \
   --region eu-west-1 \
   --type mac2.metal \
+  --dry-run
+
+crabbox admin mac-hosts allocate \
+  --region eu-west-1 \
+  --type mac2.metal \
   --force
 ```
 
