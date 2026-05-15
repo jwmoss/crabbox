@@ -25,7 +25,7 @@ EC2 Mac requirements:
 - an optional `CRABBOX_AWS_MAC_HOST_ID` or `aws.macHostId` when you want to pin
   the lease to a specific Dedicated Host;
 - On-Demand capacity;
-- the default `mac2.metal` instance type unless `--type` is set.
+- default `mac2.metal`, then `mac1.metal` fallback unless `--type` is set.
 
 Bootstrap enables Screen Sharing for `ec2-user`, sets a generated per-lease
 password, stores it at `/var/db/crabbox/vnc.password`, and keeps access behind

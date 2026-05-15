@@ -87,7 +87,7 @@ large     m8i.2xlarge, m8i-flex.2xlarge, c8i.2xlarge, r8i.2xlarge
 beast     m8i.4xlarge, m8i-flex.4xlarge, c8i.4xlarge, r8i.4xlarge, m8i.2xlarge
 
 AWS macOS
-all       mac2.metal unless `--type` is set
+all       mac2.metal, then mac1.metal unless `--type` is set
 ```
 
 Exact AWS Windows WSL2 `--type` values must come from nested-virtualization

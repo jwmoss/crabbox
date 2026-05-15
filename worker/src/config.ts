@@ -476,7 +476,7 @@ export function awsInstanceTypeCandidatesForTargetClass(
   windowsMode: WindowsMode = "normal",
 ): string[] {
   if (target === "macos") {
-    return ["mac2.metal"];
+    return ["mac2.metal", "mac1.metal"];
   }
   if (target === "windows") {
     if (windowsMode === "wsl2") {

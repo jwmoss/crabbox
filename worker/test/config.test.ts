@@ -87,7 +87,10 @@ describe("machine class config", () => {
       "m7a.large",
       "t3.large",
     ]);
-    expect(awsInstanceTypeCandidatesForTargetClass("macos", "standard")).toEqual(["mac2.metal"]);
+    expect(awsInstanceTypeCandidatesForTargetClass("macos", "standard")).toEqual([
+      "mac2.metal",
+      "mac1.metal",
+    ]);
   });
 
   it("matches the Go CLI machine class tables", () => {
@@ -127,7 +130,10 @@ describe("machine class config", () => {
       );
       expect(gcpMachineTypeCandidatesForClass(name)).toEqual(gcp[name]);
     }
-    expect(awsInstanceTypeCandidatesForTargetClass("macos", "standard")).toEqual(["mac2.metal"]);
+    expect(awsInstanceTypeCandidatesForTargetClass("macos", "standard")).toEqual([
+      "mac2.metal",
+      "mac1.metal",
+    ]);
   });
 });
 

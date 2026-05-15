@@ -2076,7 +2076,7 @@ func awsInstanceTypeCandidatesForConfig(cfg Config) []string {
 func awsInstanceTypeCandidatesForTargetModeClass(target, windowsMode, class string) []string {
 	switch target {
 	case targetMacOS:
-		return []string{"mac2.metal"}
+		return []string{"mac2.metal", "mac1.metal"}
 	case targetWindows:
 		if windowsMode == windowsModeWSL2 {
 			switch class {
