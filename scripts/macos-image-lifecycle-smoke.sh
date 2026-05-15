@@ -60,6 +60,9 @@ promoted_warmup_log=""
 source_webvnc_status_log=""
 candidate_webvnc_status_log=""
 promoted_webvnc_status_log=""
+source_webvnc_daemon_log=""
+candidate_webvnc_daemon_log=""
+promoted_webvnc_daemon_log=""
 
 run() {
   printf '+'
@@ -193,6 +196,9 @@ write_summary() {
     --arg sourceWebVNCStatusLog "$source_webvnc_status_log" \
     --arg candidateWebVNCStatusLog "$candidate_webvnc_status_log" \
     --arg promotedWebVNCStatusLog "$promoted_webvnc_status_log" \
+    --arg sourceWebVNCDaemonLog "$source_webvnc_daemon_log" \
+    --arg candidateWebVNCDaemonLog "$candidate_webvnc_daemon_log" \
+    --arg promotedWebVNCDaemonLog "$promoted_webvnc_daemon_log" \
     '{
       generatedAt: $generatedAt,
       result: $result,
@@ -252,6 +258,11 @@ write_summary() {
           source: $sourceWebVNCStatusLog,
           candidate: $candidateWebVNCStatusLog,
           promoted: $promotedWebVNCStatusLog
+        },
+        webvncDaemon: {
+          source: $sourceWebVNCDaemonLog,
+          candidate: $candidateWebVNCDaemonLog,
+          promoted: $promotedWebVNCDaemonLog
         }
       }
     }' >"$summary_file"
@@ -345,6 +356,9 @@ set_evidence_paths() {
   source_webvnc_status_log="$(log_for_label webvnc-status source)"
   candidate_webvnc_status_log="$(log_for_label webvnc-status candidate)"
   promoted_webvnc_status_log="$(log_for_label webvnc-status promoted)"
+  source_webvnc_daemon_log="$(log_for_label webvnc-daemon source)"
+  candidate_webvnc_daemon_log="$(log_for_label webvnc-daemon candidate)"
+  promoted_webvnc_daemon_log="$(log_for_label webvnc-daemon promoted)"
 }
 
 mac_host_state() {
@@ -430,7 +444,7 @@ smoke_macos_lease() {
   local lease="$1"
   local label="$2"
   local out_dir="$artifact_root/$label"
-  local webvnc_grace_seconds
+  local daemon_log webvnc_grace_seconds
   # shellcheck disable=SC2016
   run "$CRABBOX_BIN" run \
     --provider aws \
@@ -451,10 +465,11 @@ smoke_macos_lease() {
      sudo test -s /var/db/crabbox/vnc.password
      nc -z 127.0.0.1 5900'
 
+  daemon_log="$(log_for_label webvnc-daemon "$label")"
   if [[ "$open_webvnc" == "1" ]]; then
-    run "$CRABBOX_BIN" webvnc daemon start --provider aws --target macos --id "$lease" --open
+    run_tee "$daemon_log" "$CRABBOX_BIN" webvnc daemon start --provider aws --target macos --id "$lease" --open
   else
-    run "$CRABBOX_BIN" webvnc daemon start --provider aws --target macos --id "$lease"
+    run_tee "$daemon_log" "$CRABBOX_BIN" webvnc daemon start --provider aws --target macos --id "$lease"
   fi
   webvnc_grace_seconds="$(duration_seconds "$webvnc_start_grace")"
   if [[ "$webvnc_grace_seconds" -gt 0 ]]; then

@@ -247,7 +247,8 @@ the current phase, host id, lease ids, AMI id when available, blocker
 remediation commands when blocked, and artifact paths. It also preserves the
 baseline AWS provider policy, EC2 Mac host policy, combined macOS image policy,
 host offering/list/dry-run, allocation, image create, image promotion, host
-wait, warmup, and WebVNC status evidence under the run's `evidence/` directory.
+wait, warmup, WebVNC daemon, and WebVNC status evidence under the run's
+`evidence/` directory.
 Override the directory with
 `CRABBOX_MACOS_ARTIFACT_DIR`.
 

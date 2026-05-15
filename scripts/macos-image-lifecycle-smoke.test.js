@@ -249,6 +249,7 @@ test("macOS lifecycle smoke preserves full mock lifecycle evidence", async () =>
   for (const label of ["source", "candidate", "promoted"]) {
     await assertFileContains(summary.evidence.hostWait[label], /host h-mock is available/);
     await assertFileContains(summary.evidence.warmup[label], /"leaseId":"cbx_/);
+    await assertFileContains(summary.evidence.webvncDaemon[label], /webvnc daemon: ready/);
     await assertFileContains(summary.evidence.webvncStatus[label], /portal bridge: connected=true/);
   }
   await assertFileContains(summary.evidence.imageCreate, /ami-mock/);
@@ -262,9 +263,14 @@ test("macOS lifecycle smoke preserves full mock lifecycle evidence", async () =>
     evidenceFiles.filter((name) => name.startsWith("webvnc-status-")).sort(),
     ["webvnc-status-candidate.log", "webvnc-status-promoted.log", "webvnc-status-source.log"],
   );
+  assert.deepEqual(
+    evidenceFiles.filter((name) => name.startsWith("webvnc-daemon-")).sort(),
+    ["webvnc-daemon-candidate.log", "webvnc-daemon-promoted.log", "webvnc-daemon-source.log"],
+  );
 
   const fakeLog = await readFile(run.fakeLog, "utf8");
   assert.equal((fakeLog.match(/^warmup\b/gm) ?? []).length, 3);
+  assert.equal((fakeLog.match(/^webvnc daemon start\b/gm) ?? []).length, 3);
   assert.equal((fakeLog.match(/^webvnc status\b/gm) ?? []).length, 3);
   assert.match(fakeLog, /^admin mac-hosts release h-mock --region eu-west-1 --force$/m);
 });
