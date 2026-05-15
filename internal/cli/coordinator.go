@@ -206,6 +206,13 @@ type CoordinatorMacHostAllocationDryRun struct {
 	Message          string `json:"message"`
 }
 
+type CoordinatorAWSIdentity struct {
+	Account string `json:"account"`
+	ARN     string `json:"arn"`
+	UserID  string `json:"userId"`
+	Region  string `json:"region"`
+}
+
 type CoordinatorImageRef struct {
 	Provider     string
 	Region       string
@@ -966,6 +973,22 @@ func (c *CoordinatorClient) AdminMacHosts(ctx context.Context, region, serverTyp
 	}
 	err := c.do(ctx, http.MethodGet, path, nil, &res)
 	return res.Hosts, err
+}
+
+func (c *CoordinatorClient) AdminAWSIdentity(ctx context.Context, region string) (CoordinatorAWSIdentity, error) {
+	var res struct {
+		Identity CoordinatorAWSIdentity `json:"identity"`
+	}
+	values := url.Values{}
+	if region != "" {
+		values.Set("region", region)
+	}
+	path := "/v1/admin/aws-identity"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	err := c.do(ctx, http.MethodGet, path, nil, &res)
+	return res.Identity, err
 }
 
 func (c *CoordinatorClient) AdminMacHostOfferings(ctx context.Context, region, serverType string) ([]CoordinatorMacHostOffering, error) {

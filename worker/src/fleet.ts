@@ -337,6 +337,9 @@ export class FleetDurableObject implements DurableObject {
       if (method === "GET" && parts.join("/") === "v1/admin/lease-audit") {
         return await this.adminLeaseAudit(request);
       }
+      if (method === "GET" && parts.join("/") === "v1/admin/aws-identity") {
+        return await this.adminAWSIdentity(request);
+      }
       if (parts[0] === "v1" && parts[1] === "admin" && parts[2] === "mac-hosts") {
         return await this.adminMacHostsRoute(request, parts[3]);
       }
@@ -2591,6 +2594,20 @@ export class FleetDurableObject implements DurableObject {
     return json({ audits });
   }
 
+  private async adminAWSIdentity(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const queryRegion = url.searchParams.get("region") ?? this.env.CRABBOX_AWS_REGION ?? "";
+    const region = sanitizeAWSRegion(queryRegion || "eu-west-1");
+    if (!region) {
+      return json(
+        { error: "invalid_region", message: "region must be an AWS region name" },
+        { status: 400 },
+      );
+    }
+    const identity = await new EC2SpotClient(this.env, region).identity();
+    return json({ identity });
+  }
+
   private async adminMacHostsRoute(request: Request, hostID?: string): Promise<Response> {
     const method = request.method.toUpperCase();
     const url = new URL(request.url);
@@ -4225,6 +4242,9 @@ function isAdminRoute(method: string, parts: string[]): boolean {
     return true;
   }
   if (method === "GET" && parts.join("/") === "v1/admin/lease-audit") {
+    return true;
+  }
+  if (method === "GET" && parts.join("/") === "v1/admin/aws-identity") {
     return true;
   }
   if (parts[0] === "v1" && parts[1] === "admin" && parts[2] === "mac-hosts") {

@@ -109,6 +109,7 @@ EC2 Mac host lifecycle is explicit operator work:
 
 ```sh
 crabbox admin mac-hosts policy
+crabbox admin aws-identity --region eu-west-1
 crabbox admin mac-hosts list --region eu-west-1
 crabbox admin mac-hosts offerings --region eu-west-1 --type mac2.metal
 crabbox admin mac-hosts allocate --region eu-west-1 --type mac2.metal --dry-run
@@ -121,7 +122,8 @@ The coordinator AWS identity needs `ec2:DescribeInstanceTypeOfferings`,
 `ec2:CreateTags` for these admin commands. The `CreateTags` grant is needed
 because Crabbox tags hosts during `AllocateHosts`; scope it with
 `ec2:CreateAction=AllocateHosts`. Use `allocate --dry-run` first; it validates
-the request path without creating a Dedicated Host.
+the request path without creating a Dedicated Host. Use `admin aws-identity` to
+confirm which coordinator AWS principal needs the policy.
 
 CLI/direct env and config:
 

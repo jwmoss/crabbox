@@ -14,6 +14,7 @@ import type { Env, ProviderImage, ProviderMachine, ProvisioningAttempt } from ".
 
 const awsUbuntuOwner = "099720109477";
 const ec2Version = "2016-11-15";
+const stsVersion = "2011-06-15";
 const awsSpotQuotaCode = "L-34B43A08";
 const awsOnDemandQuotaCode = "L-1216C47A";
 const snapshotDeleteBackoffMs = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000];
@@ -42,6 +43,13 @@ export interface AWSMacHostAllocationDryRun {
   instanceType: string;
   ok: boolean;
   message: string;
+}
+
+export interface AWSIdentity {
+  account: string;
+  arn: string;
+  userId: string;
+  region: string;
 }
 
 export function createSecurityGroupParams(name: string, vpcID: string): Record<string, string> {
@@ -85,8 +93,10 @@ const sshIngressRangeFamilies = [
 export class EC2SpotClient {
   private readonly aws: AwsClient;
   private readonly serviceQuotas: AwsClient;
+  private readonly stsClient: AwsClient;
   private readonly endpoint: string;
   private readonly serviceQuotasEndpoint: string;
+  private readonly stsEndpoint: string;
   private readonly region: string;
   private readonly parser = new XMLParser({ ignoreAttributes: false });
 
@@ -102,6 +112,7 @@ export class EC2SpotClient {
     this.region = region || env.CRABBOX_AWS_REGION || "eu-west-1";
     this.endpoint = `https://ec2.${this.region}.amazonaws.com/`;
     this.serviceQuotasEndpoint = `https://servicequotas.${this.region}.amazonaws.com/`;
+    this.stsEndpoint = `https://sts.${this.region}.amazonaws.com/`;
     const clientOptions: ConstructorParameters<typeof AwsClient>[0] = {
       accessKeyId,
       secretAccessKey,
@@ -113,6 +124,18 @@ export class EC2SpotClient {
     }
     this.aws = new AwsClient(clientOptions);
     this.serviceQuotas = new AwsClient({ ...clientOptions, service: "servicequotas" });
+    this.stsClient = new AwsClient({ ...clientOptions, service: "sts" });
+  }
+
+  async identity(): Promise<AWSIdentity> {
+    const root = await this.sts("GetCallerIdentity", {});
+    const result = record(root["GetCallerIdentityResult"] ?? root);
+    return {
+      account: asString(result["Account"]),
+      arn: asString(result["Arn"]),
+      userId: asString(result["UserId"]),
+      region: this.region,
+    };
   }
 
   async listCrabboxServers(): Promise<ProviderMachine[]> {
@@ -1010,6 +1033,26 @@ export class EC2SpotClient {
   ): Promise<Record<string, unknown>> {
     const body = new URLSearchParams({ Action: action, Version: ec2Version, ...params });
     const response = await this.aws.fetch(this.endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded; charset=utf-8" },
+      body: body.toString(),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`aws ${action}: http ${response.status}: ${trimBody(text)}`);
+    }
+    const parsed = this.parser.parse(text) as unknown;
+    const parsedRecord = record(parsed);
+    const root = parsedRecord[`${action}Response`] ?? parsedRecord["Response"] ?? parsedRecord;
+    return record(root);
+  }
+
+  private async sts(
+    action: string,
+    params: Record<string, string>,
+  ): Promise<Record<string, unknown>> {
+    const body = new URLSearchParams({ Action: action, Version: stsVersion, ...params });
+    const response = await this.stsClient.fetch(this.stsEndpoint, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded; charset=utf-8" },
       body: body.toString(),

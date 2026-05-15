@@ -321,16 +321,20 @@ type imageDeleteKongCmd struct {
 }
 
 type adminKongCmd struct {
-	Leases     adminLeasesKongCmd     `cmd:"" passthrough:"" help:"List coordinator lease records."`
-	LeaseAudit adminLeaseAuditKongCmd `cmd:"" name:"lease-audit" passthrough:"" help:"Check expired coordinator leases against cloud provider state."`
-	MacHosts   adminMacHostsKongCmd   `cmd:"" name:"mac-hosts" passthrough:"" help:"List, allocate, or release AWS EC2 Mac Dedicated Hosts."`
-	Release    adminReleaseKongCmd    `cmd:"" passthrough:"" help:"Mark a lease released."`
-	Delete     adminDeleteKongCmd     `cmd:"" passthrough:"" help:"Delete the backing server and mark the lease released."`
+	Leases      adminLeasesKongCmd      `cmd:"" passthrough:"" help:"List coordinator lease records."`
+	LeaseAudit  adminLeaseAuditKongCmd  `cmd:"" name:"lease-audit" passthrough:"" help:"Check expired coordinator leases against cloud provider state."`
+	AWSIdentity adminAWSIdentityKongCmd `cmd:"" name:"aws-identity" passthrough:"" help:"Show the coordinator AWS caller identity."`
+	MacHosts    adminMacHostsKongCmd    `cmd:"" name:"mac-hosts" passthrough:"" help:"List, allocate, or release AWS EC2 Mac Dedicated Hosts."`
+	Release     adminReleaseKongCmd     `cmd:"" passthrough:"" help:"Mark a lease released."`
+	Delete      adminDeleteKongCmd      `cmd:"" passthrough:"" help:"Delete the backing server and mark the lease released."`
 }
 type adminLeasesKongCmd struct {
 	Args []string `arg:"" optional:""`
 }
 type adminLeaseAuditKongCmd struct {
+	Args []string `arg:"" optional:""`
+}
+type adminAWSIdentityKongCmd struct {
 	Args []string `arg:"" optional:""`
 }
 type adminMacHostsKongCmd struct {
@@ -532,6 +536,9 @@ func (c *adminLeasesKongCmd) Run(ctx context.Context, app App) error {
 }
 func (c *adminLeaseAuditKongCmd) Run(ctx context.Context, app App) error {
 	return app.adminLeaseAudit(ctx, c.Args)
+}
+func (c *adminAWSIdentityKongCmd) Run(ctx context.Context, app App) error {
+	return app.adminAWSIdentity(ctx, c.Args)
 }
 func (c *adminMacHostsKongCmd) Run(ctx context.Context, app App) error {
 	return app.adminMacHosts(ctx, c.Args)

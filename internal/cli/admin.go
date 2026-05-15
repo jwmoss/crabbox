@@ -85,6 +85,29 @@ func leaseAuditCleanupSummary(audit CoordinatorLeaseCloudAudit) string {
 	return fmt.Sprintf("attempts=%d error=%s", audit.CleanupAttempts, audit.CleanupError)
 }
 
+func (a App) adminAWSIdentity(ctx context.Context, args []string) error {
+	fs := newFlagSet("admin aws-identity", a.Stderr)
+	region := fs.String("region", "", "AWS region used for the STS endpoint")
+	jsonOut := fs.Bool("json", false, "print JSON")
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	coord, err := configuredAdminCoordinator()
+	if err != nil {
+		return err
+	}
+	identity, err := coord.AdminAWSIdentity(ctx, *region)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return json.NewEncoder(a.Stdout).Encode(identity)
+	}
+	fmt.Fprintf(a.Stdout, "aws identity account=%s arn=%s user_id=%s region=%s\n",
+		blank(identity.Account, "-"), blank(identity.ARN, "-"), blank(identity.UserID, "-"), blank(identity.Region, "-"))
+	return nil
+}
+
 func (a App) adminMacHosts(ctx context.Context, args []string) error {
 	args = stripKongCommandPath(args, "admin", "mac-hosts")
 	if len(args) == 0 || isHelpArg(args[0]) {

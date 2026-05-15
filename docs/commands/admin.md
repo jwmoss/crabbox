@@ -7,6 +7,7 @@ crabbox admin leases
 crabbox admin leases --state active --json
 crabbox admin lease-audit --state expired --provider aws
 crabbox admin lease-audit --fail-on-live
+crabbox admin aws-identity --region eu-west-1
 crabbox admin mac-hosts policy
 crabbox admin mac-hosts offerings --region eu-west-1 --type mac2.metal
 crabbox admin mac-hosts list --region eu-west-1
@@ -53,6 +54,18 @@ Flags:
 --org <name>        filter by org
 --limit <n>         default 100, maximum 500
 --fail-on-live      exit non-zero for live cloud instances or audit errors
+--json              print JSON
+```
+
+## aws-identity
+
+Show the AWS caller identity used by the coordinator. This is a read-only admin
+diagnostic for attaching AWS IAM policy updates to the right principal.
+
+Flags:
+
+```text
+--region <region>   AWS region used for the STS endpoint
 --json              print JSON
 ```
 

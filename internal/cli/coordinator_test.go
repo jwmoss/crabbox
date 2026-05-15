@@ -355,6 +355,33 @@ func TestCoordinatorAdminMacHosts(t *testing.T) {
 	}
 }
 
+func TestCoordinatorAdminAWSIdentity(t *testing.T) {
+	var seen string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Method + " " + r.URL.String()
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/admin/aws-identity" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+		if got := r.URL.Query().Get("region"); got != "eu-west-1" {
+			t.Fatalf("region query=%q", got)
+		}
+		_, _ = w.Write([]byte(`{"identity":{"account":"123456789012","arn":"arn:aws:iam::123456789012:user/crabbox","userId":"AIDAEXAMPLE","region":"eu-west-1"}}`))
+	}))
+	defer server.Close()
+	client := &CoordinatorClient{BaseURL: server.URL, Token: "admin-token", Client: server.Client()}
+
+	identity, err := client.AdminAWSIdentity(context.Background(), "eu-west-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.Account != "123456789012" || identity.UserID != "AIDAEXAMPLE" || identity.Region != "eu-west-1" {
+		t.Fatalf("identity=%#v", identity)
+	}
+	if seen != "GET /v1/admin/aws-identity?region=eu-west-1" {
+		t.Fatalf("seen=%q", seen)
+	}
+}
+
 func mapStringString(input map[string]any) map[string]string {
 	out := map[string]string{}
 	for key, value := range input {

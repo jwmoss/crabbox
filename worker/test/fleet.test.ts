@@ -2362,6 +2362,51 @@ describe("fleet lease identity and idle", () => {
     });
   });
 
+  it("reports the coordinator AWS identity through an admin route", async () => {
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      async (input, init) => {
+        const url = input instanceof Request ? input.url : String(input);
+        expect(url).toContain("sts.eu-west-1.amazonaws.com");
+        const params = new URLSearchParams(await requestBodyForTest(input, init));
+        expect(params.get("Action")).toBe("GetCallerIdentity");
+        return ec2XMLResponse(`<?xml version="1.0" encoding="UTF-8"?>
+        <GetCallerIdentityResponse>
+          <GetCallerIdentityResult>
+            <Arn>arn:aws:iam::123456789012:user/crabbox</Arn>
+            <UserId>AIDAEXAMPLE</UserId>
+            <Account>123456789012</Account>
+          </GetCallerIdentityResult>
+        </GetCallerIdentityResponse>`);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const fleet = testFleet(
+      new MemoryStorage(),
+      {},
+      {
+        AWS_ACCESS_KEY_ID: "test",
+        AWS_SECRET_ACCESS_KEY: "test",
+        CRABBOX_AWS_REGION: "eu-west-1",
+      },
+    );
+
+    const response = await fleet.fetch(
+      request("GET", "/v1/admin/aws-identity?region=eu-west-1", {
+        headers: { "x-crabbox-admin": "true" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      identity: {
+        account: "123456789012",
+        arn: "arn:aws:iam::123456789012:user/crabbox",
+        userId: "AIDAEXAMPLE",
+        region: "eu-west-1",
+      },
+    });
+  });
+
   it("allocates AWS EC2 Mac Dedicated Hosts through an admin route", async () => {
     const actions: string[] = [];
     const seenParams: Record<string, string>[] = [];
