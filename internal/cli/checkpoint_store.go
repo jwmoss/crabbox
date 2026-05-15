@@ -1,0 +1,212 @@
+package cli
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+)
+
+type CheckpointRecord struct {
+	ID               string                      `json:"id"`
+	ParentID         string                      `json:"parentId,omitempty"`
+	Name             string                      `json:"name,omitempty"`
+	Notes            string                      `json:"notes,omitempty"`
+	CreatedAt        string                      `json:"createdAt"`
+	CreatedBy        string                      `json:"createdBy,omitempty"`
+	Repo             CheckpointRepo              `json:"repo"`
+	Lease            CheckpointLease             `json:"lease,omitempty"`
+	Run              CheckpointRun               `json:"run,omitempty"`
+	Workspace        CheckpointWorkspace         `json:"workspace,omitempty"`
+	Artifacts        []CheckpointArtifact        `json:"artifacts,omitempty"`
+	ProviderSnapshot *CheckpointProviderSnapshot `json:"providerSnapshot,omitempty"`
+}
+
+type CheckpointRepo struct {
+	Root      string `json:"root,omitempty"`
+	Name      string `json:"name,omitempty"`
+	RemoteURL string `json:"remoteUrl,omitempty"`
+	Branch    string `json:"branch,omitempty"`
+	Head      string `json:"head,omitempty"`
+	BaseRef   string `json:"baseRef,omitempty"`
+}
+
+type CheckpointLease struct {
+	ID          string `json:"id,omitempty"`
+	Slug        string `json:"slug,omitempty"`
+	Provider    string `json:"provider,omitempty"`
+	TargetOS    string `json:"targetOS,omitempty"`
+	WindowsMode string `json:"windowsMode,omitempty"`
+	Class       string `json:"class,omitempty"`
+	ServerType  string `json:"serverType,omitempty"`
+}
+
+type CheckpointRun struct {
+	ID          string `json:"id,omitempty"`
+	ExitCode    *int   `json:"exitCode,omitempty"`
+	DurationMs  int64  `json:"durationMs,omitempty"`
+	Command     string `json:"command,omitempty"`
+	LogPath     string `json:"logPath,omitempty"`
+	ResultsPath string `json:"resultsPath,omitempty"`
+}
+
+type CheckpointWorkspace struct {
+	ManifestPath string `json:"manifestPath,omitempty"`
+	PatchPath    string `json:"patchPath,omitempty"`
+	ArchivePath  string `json:"archivePath,omitempty"`
+	ChangedFiles int    `json:"changedFiles,omitempty"`
+	DeletedFiles int    `json:"deletedFiles,omitempty"`
+	Bytes        int64  `json:"bytes,omitempty"`
+}
+
+type CheckpointArtifact struct {
+	Path string `json:"path,omitempty"`
+	URL  string `json:"url,omitempty"`
+	Type string `json:"type,omitempty"`
+}
+
+type CheckpointProviderSnapshot struct {
+	Provider string `json:"provider,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Kind     string `json:"kind,omitempty"`
+}
+
+type checkpointStore struct {
+	dir string
+}
+
+func defaultCheckpointStore() (checkpointStore, error) {
+	stateDir, err := crabboxStateDir()
+	if err != nil {
+		return checkpointStore{}, err
+	}
+	return checkpointStore{dir: filepath.Join(stateDir, "checkpoints")}, nil
+}
+
+func (s checkpointStore) Create(record CheckpointRecord) (CheckpointRecord, error) {
+	if strings.TrimSpace(record.ID) == "" {
+		id, err := newCheckpointID()
+		if err != nil {
+			return CheckpointRecord{}, err
+		}
+		record.ID = id
+	}
+	id, err := validateCheckpointID(record.ID)
+	if err != nil {
+		return CheckpointRecord{}, err
+	}
+	record.ID = id
+	record.ParentID = strings.TrimSpace(record.ParentID)
+	if record.ParentID != "" {
+		parentID, err := validateCheckpointID(record.ParentID)
+		if err != nil {
+			return CheckpointRecord{}, fmt.Errorf("parent id: %w", err)
+		}
+		record.ParentID = parentID
+	}
+	if strings.TrimSpace(record.CreatedAt) == "" {
+		record.CreatedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	if _, err := time.Parse(time.RFC3339, record.CreatedAt); err != nil {
+		return CheckpointRecord{}, exit(2, "checkpoint createdAt must be RFC3339: %v", err)
+	}
+	path := s.path(record.ID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return CheckpointRecord{}, exit(2, "create checkpoint directory: %v", err)
+	}
+	if err := writeCheckpointJSON(path, record); err != nil {
+		return CheckpointRecord{}, err
+	}
+	return record, nil
+}
+
+func (s checkpointStore) Read(id string) (CheckpointRecord, error) {
+	id, err := validateCheckpointID(id)
+	if err != nil {
+		return CheckpointRecord{}, err
+	}
+	data, err := os.ReadFile(s.path(id))
+	if errors.Is(err, os.ErrNotExist) {
+		return CheckpointRecord{}, exit(2, "checkpoint %s not found", id)
+	}
+	if err != nil {
+		return CheckpointRecord{}, exit(2, "read checkpoint %s: %v", id, err)
+	}
+	var record CheckpointRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		return CheckpointRecord{}, exit(2, "parse checkpoint %s: %v", id, err)
+	}
+	if record.ID == "" {
+		record.ID = id
+	}
+	return record, nil
+}
+
+func (s checkpointStore) List() ([]CheckpointRecord, error) {
+	entries, err := os.ReadDir(s.dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, exit(2, "read checkpoints directory: %v", err)
+	}
+	records := make([]CheckpointRecord, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		record, err := s.Read(id)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		left, leftErr := time.Parse(time.RFC3339, records[i].CreatedAt)
+		right, rightErr := time.Parse(time.RFC3339, records[j].CreatedAt)
+		if leftErr == nil && rightErr == nil && !left.Equal(right) {
+			return left.After(right)
+		}
+		return records[i].ID > records[j].ID
+	})
+	return records, nil
+}
+
+func (s checkpointStore) path(id string) string {
+	return filepath.Join(s.dir, id+".json")
+}
+
+func writeCheckpointJSON(path string, record CheckpointRecord) error {
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return exit(2, "checkpoint %s already exists", record.ID)
+		}
+		return exit(2, "create checkpoint %s: %v", path, err)
+	}
+	created := false
+	defer func() {
+		if !created {
+			_ = os.Remove(path)
+		}
+	}()
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
+		return exit(2, "write checkpoint %s: %v", path, err)
+	}
+	if err := file.Close(); err != nil {
+		return exit(2, "close checkpoint %s: %v", path, err)
+	}
+	created = true
+	return nil
+}
