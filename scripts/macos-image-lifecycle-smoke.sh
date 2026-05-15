@@ -36,6 +36,15 @@ run() {
   "$@"
 }
 
+run_tee() {
+  local out="$1"
+  shift
+  printf '+'
+  printf ' %q' "$@"
+  printf '\n'
+  "$@" | tee "$out"
+}
+
 need() {
   if ! command -v "$1" >/dev/null 2>&1; then
     printf 'missing required command: %s\n' "$1" >&2
@@ -240,8 +249,8 @@ if [[ -n "$existing_host" ]]; then
   allocated_host="$existing_host"
 else
   dry_log="$(mktemp)"
-  run "$CRABBOX_BIN" admin mac-hosts allocate --region "$region" --type "$instance_type" --dry-run | tee "$dry_log"
-  if ! grep -q '^dry-run ok ' "$dry_log"; then
+  run_tee "$dry_log" "$CRABBOX_BIN" admin mac-hosts allocate --region "$region" --type "$instance_type" --dry-run --json
+  if ! jq -e 'any(.[]; .ok == true)' "$dry_log" >/dev/null; then
     printf 'macOS lifecycle blocked before paid work: EC2 Mac host dry-run did not succeed.\n' >&2
     exit 1
   fi
@@ -252,7 +261,7 @@ else
   fi
 
   allocate_log="$(mktemp)"
-  run "$CRABBOX_BIN" admin mac-hosts allocate --region "$region" --type "$instance_type" --force --json | tee "$allocate_log"
+  run_tee "$allocate_log" "$CRABBOX_BIN" admin mac-hosts allocate --region "$region" --type "$instance_type" --force --json
   allocated_host="$(jq -r '.[0].id // empty' "$allocate_log")"
   if [[ -z "$allocated_host" ]]; then
     printf 'macOS lifecycle blocked after allocation: could not determine allocated EC2 Mac Dedicated Host id.\n' >&2

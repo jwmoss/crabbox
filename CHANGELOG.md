@@ -10,6 +10,7 @@
 - Hardened the macOS image lifecycle smoke so it waits for EC2 Mac Dedicated Host scrubbing between source, candidate, and promoted-image boots.
 - Hardened the macOS image lifecycle smoke so lease cleanup also stops each lease's local WebVNC daemon.
 - Hardened the macOS image lifecycle smoke so WebVNC must report an active portal bridge before artifacts are collected.
+- Fixed the macOS image lifecycle smoke so structured dry-run and allocation JSON are not polluted by command tracing before `jq` parses them.
 - Added `crabbox checkpoint` native disk-snapshot checkpoints for brokered AWS, Azure, and GCP Linux leases, optional provider image checkpoints via `--strategy image`, local workspace archives for generic POSIX SSH leases, inspect/list/delete flows, archive restore, and checkpoint forks into fresh leases.
 - Added brokered provider snapshot/image deletion for AWS EBS snapshots and AMIs, Azure managed disk snapshots and managed images, and GCP disk snapshots and machine images.
 

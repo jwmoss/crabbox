@@ -202,8 +202,10 @@ scripts/macos-image-lifecycle-smoke.sh
 ```
 
 By default it only runs host offering/list/dry-run checks and stops before paid
-allocation or lease creation. After the dry-run succeeds, opt in to the paid
-lifecycle explicitly:
+allocation or lease creation. The dry-run is parsed from the command's JSON
+output so the script only continues when at least one availability zone reports
+`ok: true`. After the dry-run succeeds, opt in to the paid lifecycle
+explicitly:
 
 ```bash
 CRABBOX_MACOS_ALLOCATE=1 \
