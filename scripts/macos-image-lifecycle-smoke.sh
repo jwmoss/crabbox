@@ -40,6 +40,8 @@ ami_id=""
 summary_result=""
 summary_phase="init"
 blocker_message=""
+blocker_remediation=""
+blocker_commands=""
 offerings_log=""
 hosts_log=""
 dry_log=""
@@ -81,12 +83,22 @@ preflight_blocker_from_stderr() {
   fi
   if grep -q -E 'http 404|not_found' "$err"; then
     blocker_message="coordinator does not expose EC2 Mac host lifecycle admin endpoints; deploy a coordinator with /v1/admin/mac-hosts support before Mac image validation"
+    blocker_remediation="Deploy a coordinator that exposes /v1/admin/mac-hosts, then rerun the no-spend Mac host preflight."
     return 0
   fi
   blocker_message="$label failed"
   if [[ -n "$detail" ]]; then
     blocker_message="$blocker_message: $detail"
   fi
+}
+
+set_host_iam_remediation() {
+  blocker_remediation="Apply the EC2 Mac host lifecycle policy to the coordinator AWS identity, verify the baseline AWS provider policy before paid image validation, then rerun the no-spend Mac host dry-run."
+  blocker_commands="$(printf '%s\n' \
+    "$CRABBOX_BIN admin aws-identity --region $region" \
+    "$CRABBOX_BIN admin mac-hosts policy" \
+    "$CRABBOX_BIN admin aws-policy" \
+    "$CRABBOX_BIN admin mac-hosts allocate --region $region --type $instance_type --dry-run --json")"
 }
 
 preflight_command() {
@@ -159,6 +171,8 @@ write_summary() {
     --arg promote "$promote" \
     --arg amiID "$ami_id" \
     --arg blockerMessage "$blocker_message" \
+    --arg blockerRemediation "$blocker_remediation" \
+    --arg blockerCommands "$blocker_commands" \
     --arg offeringsLog "$offerings_log" \
     --arg hostsLog "$hosts_log" \
     --arg dryLog "$dry_log" \
@@ -200,7 +214,9 @@ write_summary() {
         amiId: $amiID
       },
       blocker: {
-        message: $blockerMessage
+        message: $blockerMessage,
+        remediation: $blockerRemediation,
+        commands: ($blockerCommands | split("\n") | map(select(length > 0)))
       },
       artifacts: {
         source: ($artifactRoot + "/source"),
@@ -486,6 +502,9 @@ else
   preflight_command host-dry-run "mac host dry-run" "$dry_log" "$CRABBOX_BIN" admin mac-hosts allocate --region "$region" --type "$instance_type" --dry-run --json
   if ! jq -e 'any(.[]; .ok == true)' "$dry_log" >/dev/null; then
     blocker_message="$(jq -r '[.[] | select(.ok != true) | .message] | unique | join("; ")' "$dry_log")"
+    if grep -q 'UnauthorizedOperation' "$dry_log"; then
+      set_host_iam_remediation
+    fi
     printf 'macOS lifecycle blocked before paid work: EC2 Mac host dry-run did not succeed.\n' >&2
     write_summary blocked host-dry-run
     exit 1

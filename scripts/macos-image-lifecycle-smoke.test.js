@@ -174,6 +174,7 @@ test("macOS lifecycle smoke reports a missing coordinator mac-host endpoint befo
   assert.equal(summary.phase, "host-offerings");
   assert.match(summary.blocker.message, /does not expose EC2 Mac host lifecycle admin endpoints/);
   assert.match(summary.blocker.message, /\/v1\/admin\/mac-hosts/);
+  assert.match(summary.blocker.remediation, /Deploy a coordinator/);
 });
 
 test("macOS lifecycle smoke writes a blocked IAM summary before paid work", async () => {
@@ -195,6 +196,13 @@ test("macOS lifecycle smoke writes a blocked IAM summary before paid work", asyn
   assert.equal(summary.phase, "host-dry-run");
   assert.match(summary.blocker.message, /ec2:AllocateHosts/);
   assert.match(summary.blocker.message, /ec2:CreateTags/);
+  assert.match(summary.blocker.remediation, /Apply the EC2 Mac host lifecycle policy/);
+  assert.deepEqual(summary.blocker.commands, [
+    `${run.fake} admin aws-identity --region eu-west-1`,
+    `${run.fake} admin mac-hosts policy`,
+    `${run.fake} admin aws-policy`,
+    `${run.fake} admin mac-hosts allocate --region eu-west-1 --type mac2.metal --dry-run --json`,
+  ]);
   await assertFileContains(summary.evidence.hostOfferings, /mac2\.metal/);
   await assertFileContains(summary.evidence.hostList, /^\[\]\n?$/);
   await assertFileContains(summary.evidence.hostDryRun, /UnauthorizedOperation/);
