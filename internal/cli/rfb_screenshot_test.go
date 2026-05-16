@@ -244,7 +244,7 @@ func readTestRFBPixelFormat(conn net.Conn) error {
 	if _, err := io.ReadFull(conn, msg); err != nil {
 		return err
 	}
-	if msg[0] != 0 || msg[4] != 32 || msg[5] != 24 || msg[7] != 0 {
+	if msg[0] != 0 || msg[4] != 32 || msg[5] != 24 || msg[7] != 1 {
 		return errUnexpectedTestBytes("pixel format", msg)
 	}
 	return nil

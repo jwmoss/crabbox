@@ -265,6 +265,8 @@ export class EC2SpotClient {
       const attempts: ProvisioningAttempt[] = [];
       const quotaCache = new Map<string, number | undefined>();
       const imageCache = new Map<string, string>();
+      const pinnedMacOSImageID =
+        config.target === "macos" ? config.awsAMI || this.env.CRABBOX_AWS_AMI || "" : "";
       const resolveCandidateImageID = async (candidateConfig: LeaseConfig): Promise<string> => {
         if (defaultImageID) {
           return defaultImageID;
@@ -272,13 +274,18 @@ export class EC2SpotClient {
         if (candidateConfig.target !== "macos") {
           return this.resolveAMI(candidateConfig);
         }
+        if (pinnedMacOSImageID && candidateConfig.serverType === config.serverType) {
+          return pinnedMacOSImageID;
+        }
         const query = awsMacOSAMIQuery(candidateConfig.serverType);
         const cacheKey = `${query.name}\0${query.architecture}`;
         const cached = imageCache.get(cacheKey);
         if (cached) {
           return cached;
         }
-        const imageID = await this.resolveAMI(candidateConfig);
+        const imageID = pinnedMacOSImageID
+          ? await this.resolveLatestAmazonAMI(query.name, query.architecture)
+          : await this.resolveAMI(candidateConfig);
         imageCache.set(cacheKey, imageID);
         return imageID;
       };
