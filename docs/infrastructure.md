@@ -225,6 +225,10 @@ CRABBOX_AWS_INSTANCE_PROFILE     optional IAM instance profile name
 CRABBOX_AWS_ROOT_GB              default 400
 CRABBOX_AWS_SSH_CIDRS            optional comma-separated SSH source CIDRs
 CRABBOX_AWS_MAC_HOST_ID          EC2 Mac Dedicated Host id for target=macos
+CRABBOX_AWS_ORPHAN_SWEEP_ENABLED defaults on when AWS broker credentials exist
+CRABBOX_AWS_ORPHAN_SWEEP_DELETE  set 1 to terminate confirmed orphan EC2 instances
+CRABBOX_AWS_ORPHAN_SWEEP_INTERVAL_SECONDS default 3600
+CRABBOX_AWS_ORPHAN_SWEEP_GRACE_SECONDS default 900
 CRABBOX_SSH_FALLBACK_PORTS       optional comma-separated SSH fallback ports, or none
 ```
 

@@ -5,6 +5,7 @@
 ### Added
 
 - Added an AWS orphan-audit script for trusted operators to find Crabbox-tagged EC2 instances left behind in old provider accounts after credential or account rotation.
+- Added a broker-side AWS orphan sweep that periodically scans configured AWS capacity regions from the Durable Object alarm and can terminate confirmed Crabbox-tagged EC2 orphans.
 
 ### Changed
 
