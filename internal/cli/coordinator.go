@@ -56,7 +56,8 @@ type CoordinatorLease struct {
 	Class                string                `json:"class"`
 	ServerType           string                `json:"serverType"`
 	RequestedServerType  string                `json:"requestedServerType,omitempty"`
-	HostID               string                `json:"hostID,omitempty"`
+	HostID               string                `json:"hostId,omitempty"`
+	HostIDCompat         string                `json:"hostID,omitempty"`
 	Market               string                `json:"market,omitempty"`
 	ProvisioningAttempts []ProvisioningAttempt `json:"provisioningAttempts,omitempty"`
 	CapacityHints        []CapacityHint        `json:"capacityHints,omitempty"`
@@ -600,6 +601,7 @@ func (c *CoordinatorClient) CreateLease(ctx context.Context, cfg Config, publicK
 		"class":                           cfg.Class,
 		"serverType":                      cfg.ServerType,
 		"serverTypeExplicit":              cfg.ServerTypeExplicit,
+		"hostId":                          cfg.HostID,
 		"hostID":                          cfg.HostID,
 		"location":                        cfg.Location,
 		"image":                           cfg.Image,
@@ -1558,10 +1560,11 @@ func localCoordinatorOwner() string {
 }
 
 func leaseToServerTarget(lease CoordinatorLease, cfg Config) (Server, SSHTarget, string) {
+	hostID := coordinatorLeaseHostID(lease)
 	server := Server{
 		Provider: lease.Provider,
 		CloudID:  lease.CloudID,
-		HostID:   lease.HostID,
+		HostID:   hostID,
 		ID:       lease.ServerID,
 		Name:     lease.ServerName,
 		Status:   lease.State,
@@ -1570,7 +1573,7 @@ func leaseToServerTarget(lease CoordinatorLease, cfg Config) (Server, SSHTarget,
 			"slug":              lease.Slug,
 			"keep":              fmt.Sprint(lease.Keep),
 			"target":            blank(lease.TargetOS, cfg.TargetOS),
-			"host_id":           lease.HostID,
+			"host_id":           hostID,
 			"windows_mode":      blank(lease.WindowsMode, cfg.WindowsMode),
 			"desktop":           fmt.Sprint(lease.Desktop),
 			"browser":           fmt.Sprint(lease.Browser),
@@ -1601,6 +1604,10 @@ func leaseToServerTarget(lease CoordinatorLease, cfg Config) (Server, SSHTarget,
 	target := sshTargetForLease(cfg, lease.Host, lease.SSHUser, lease.SSHPort)
 	useStoredTestboxKey(&target, lease.ID)
 	return server, target, lease.ID
+}
+
+func coordinatorLeaseHostID(lease CoordinatorLease) string {
+	return firstNonBlank(lease.HostID, lease.HostIDCompat)
 }
 
 func (a App) touchCoordinatorLeaseBestEffort(ctx context.Context, cfg Config, leaseID string) {

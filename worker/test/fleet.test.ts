@@ -793,6 +793,7 @@ describe("fleet lease identity and idle", () => {
           target: "macos",
           class: "standard",
           serverType: "mac2.metal",
+          hostId: "h-000000000001",
           capacity: { market: "on-demand" },
           sshPublicKey: "ssh-ed25519 test",
         },
@@ -801,7 +802,7 @@ describe("fleet lease identity and idle", () => {
 
     expect(create.status).toBe(201);
     const { lease } = (await create.json()) as { lease: LeaseRecord };
-    expect(lease.hostID).toBe("h-000000000001");
+    expect(lease.hostId).toBe("h-000000000001");
   });
 
   it("only applies target-matching promoted AWS images", async () => {

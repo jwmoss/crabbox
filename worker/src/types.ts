@@ -104,6 +104,7 @@ export interface LeaseRequest {
   class?: string;
   serverType?: string;
   serverTypeExplicit?: boolean;
+  hostId?: string;
   hostID?: string;
   location?: string;
   image?: string;
@@ -194,6 +195,7 @@ export interface LeaseRecord {
   class: string;
   serverType: string;
   requestedServerType?: string;
+  hostId?: string;
   hostID?: string;
   market?: string;
   provisioningAttempts?: ProvisioningAttempt[];
@@ -472,7 +474,7 @@ export interface MachineView {
   name: string;
   status: string;
   serverType: string;
-  hostID?: string;
+  hostId?: string;
   host: string;
   labels: Record<string, string>;
 }

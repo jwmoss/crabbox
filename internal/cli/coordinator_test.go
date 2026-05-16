@@ -740,6 +740,8 @@ func TestCoordinatorCreateLeaseSendsAWSSSHCIDRs(t *testing.T) {
 		GCPRootGB          int64    `json:"gcpRootGB"`
 		SSHFallbackPorts   []string `json:"sshFallbackPorts"`
 		ServerTypeExplicit bool     `json:"serverTypeExplicit"`
+		HostID             string   `json:"hostId"`
+		HostIDCompat       string   `json:"hostID"`
 		Capacity           map[string]any
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -759,6 +761,7 @@ func TestCoordinatorCreateLeaseSendsAWSSSHCIDRs(t *testing.T) {
 		Provider:           "google",
 		ServerType:         "t3.small",
 		ServerTypeExplicit: true,
+		HostID:             "h-000000000001",
 		AWSSnapshot:        "snap-123",
 		AWSSSHCIDRs:        []string{"198.51.100.7/32"},
 		AzureLocation:      "eastus",
@@ -810,6 +813,9 @@ func TestCoordinatorCreateLeaseSendsAWSSSHCIDRs(t *testing.T) {
 	}
 	if !body.ServerTypeExplicit {
 		t.Fatal("serverTypeExplicit=false, want true")
+	}
+	if body.HostID != "h-000000000001" || body.HostIDCompat != "h-000000000001" {
+		t.Fatalf("host id fields not forwarded: hostId=%q hostID=%q", body.HostID, body.HostIDCompat)
 	}
 	if body.Capacity != nil {
 		t.Fatalf("default capacity fields should be omitted for mixed-version brokers: %#v", body.Capacity)

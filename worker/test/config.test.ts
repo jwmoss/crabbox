@@ -337,8 +337,11 @@ describe("lease config", () => {
     expect(() =>
       leaseConfig({ provider: "hetzner", target: "macos", sshPublicKey: "ssh-ed25519 test" }),
     ).toThrow("EC2 Mac Dedicated Host");
-    expect(leaseConfig({ hostID: "h-neutral", sshPublicKey: "ssh-ed25519 test" }).hostID).toBe(
+    expect(leaseConfig({ hostId: "h-neutral", sshPublicKey: "ssh-ed25519 test" }).hostID).toBe(
       "h-neutral",
+    );
+    expect(leaseConfig({ hostID: "h-compat", sshPublicKey: "ssh-ed25519 test" }).hostID).toBe(
+      "h-compat",
     );
   });
 

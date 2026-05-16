@@ -433,6 +433,7 @@ describe("aws provider", () => {
       registerSnapshotImage: () => Promise<string>;
       waitForImageAvailable: (imageID: string) => Promise<string>;
       ensureSecurityGroup: () => Promise<string>;
+      ec2: (action: string, params?: Record<string, string>) => Promise<unknown>;
       createServer: (...args: unknown[]) => Promise<{
         provider: "aws";
         id: number;
@@ -459,6 +460,10 @@ describe("aws provider", () => {
     client.ensureSecurityGroup = async () => {
       calls.push("security-group");
       return "sg-123";
+    };
+    client.ec2 = async (action, params) => {
+      calls.push(`${action}:${params?.ImageId ?? ""}`);
+      return {};
     };
     client.createServer = async (...args: unknown[]) => {
       calls.push(`launch:${String(args[4])}`);
@@ -494,6 +499,7 @@ describe("aws provider", () => {
       "wait:ami-transient",
       "security-group",
       "launch:ami-transient",
+      "DeregisterImage:ami-transient",
     ]);
   });
 

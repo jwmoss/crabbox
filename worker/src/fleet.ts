@@ -1016,7 +1016,7 @@ export class FleetDurableObject implements DurableObject {
     };
     const requestedHostID = config.hostID || config.awsMacHostID;
     if (requestedHostID) {
-      record.hostID = requestedHostID;
+      record.hostId = requestedHostID;
     }
     if (config.target === "windows") {
       record.windowsMode = config.windowsMode;
@@ -1046,7 +1046,7 @@ export class FleetDurableObject implements DurableObject {
     record.cloudID = server.cloudID;
     record.serverType = serverType;
     if (server.hostID) {
-      record.hostID = server.hostID;
+      record.hostId = server.hostID;
     }
     if (market) {
       record.market = market;
@@ -2867,7 +2867,7 @@ export class FleetDurableObject implements DurableObject {
     }
     if (method === "DELETE" && hostID) {
       const released = await client.releaseMacHost(hostID);
-      return json({ hostID, released });
+      return json({ hostId: hostID, released });
     }
     return json({ error: "not_found" }, { status: 404 });
   }
