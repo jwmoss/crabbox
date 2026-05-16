@@ -201,6 +201,10 @@ copy-pasteable policy with:
 crabbox admin aws-identity --region eu-west-1 --json
 crabbox admin aws-policy --mac-hosts > /tmp/crabbox-macos-image-policy.json
 crabbox admin mac-hosts policy
+
+coordinator_account=$(crabbox admin aws-identity --region eu-west-1 --json | jq -r .account)
+local_account=$(aws sts get-caller-identity --query Account --output text)
+test "$local_account" = "$coordinator_account"
 ```
 
 Apply the combined policy to the coordinator AWS principal before rerunning the

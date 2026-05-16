@@ -91,6 +91,10 @@ principal returned by `admin aws-identity`:
 crabbox admin aws-identity --region eu-west-1 --json
 crabbox admin aws-policy --mac-hosts > /tmp/crabbox-macos-image-policy.json
 
+coordinator_account=$(crabbox admin aws-identity --region eu-west-1 --json | jq -r .account)
+local_account=$(aws sts get-caller-identity --query Account --output text)
+test "$local_account" = "$coordinator_account"
+
 aws iam put-role-policy \
   --role-name <coordinator-role-name> \
   --policy-name CrabboxMacOSImageLifecycle \
