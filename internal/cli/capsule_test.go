@@ -72,6 +72,7 @@ func TestBuildActionsCapsuleManifestKeepsSmallContract(t *testing.T) {
 	ref := actionsRunRef{Repo: GitHubRepo{Owner: "example-org", Name: "my-app"}, RunID: "123"}
 	view := capsuleRunView{
 		URL:          "https://github.com/example-org/my-app/actions/runs/123",
+		Attempt:      2,
 		WorkflowName: "CI",
 		HeadSHA:      "abc123",
 		Conclusion:   "failure",
@@ -90,6 +91,9 @@ func TestBuildActionsCapsuleManifestKeepsSmallContract(t *testing.T) {
 	}
 	if manifest.Safety.ActionProfile != "build_debug_v1" || manifest.Extensions[repoBuildReplayClass] == nil {
 		t.Fatalf("foundation fields missing: %#v", manifest)
+	}
+	if manifest.Source.Attempt != 2 || !strings.Contains(manifest.Inputs.ActionsRunDigest, "attempt-2") {
+		t.Fatalf("attempt was not resolved into manifest identity: source=%#v inputs=%#v", manifest.Source, manifest.Inputs)
 	}
 }
 
@@ -144,6 +148,13 @@ func TestCapsuleFailureSignatureStripsGitHubPrefixes(t *testing.T) {
 	}
 }
 
+func TestCapsuleFailureSignatureStripsShortGitHubTimestamp(t *testing.T) {
+	got := capsuleFailureSignature("Plugin\tCheck\t2026-01-01T00:00:00Z Error\n")
+	if got != "Error" {
+		t.Fatalf("signature=%q", got)
+	}
+}
+
 func TestCapsuleFailureSignatureForSelectionFiltersJobAndStep(t *testing.T) {
 	log := strings.Join([]string{
 		"Go\tTest\tpanic: selected",
@@ -176,6 +187,13 @@ func TestCapsuleFailureSignatureSkipsGenericFailSummaries(t *testing.T) {
 	}
 }
 
+func TestCapsuleFailureSignaturePreservesTabbedMessages(t *testing.T) {
+	got := capsuleFailureSignature("Go\tTest\tError:\twant\tgot\n")
+	if got != "Error:\twant\tgot" {
+		t.Fatalf("signature=%q", got)
+	}
+}
+
 func TestSafePathComponent(t *testing.T) {
 	got := safePathComponent("Example Org/My App Actions 123")
 	if strings.ContainsAny(got, "/ ") || got != "example-org-my-app-actions-123" {
@@ -185,18 +203,55 @@ func TestSafePathComponent(t *testing.T) {
 
 func TestDefaultCapsuleOutputNameIncludesAttempt(t *testing.T) {
 	ref := actionsRunRef{Repo: GitHubRepo{Owner: "example-org", Name: "my-app"}, RunID: "123", Attempt: 2}
-	if got := defaultCapsuleOutputName(ref); got != "example-org-my-app-actions-123-attempt-2" {
+	if got := defaultCapsuleOutputName(ref, capsuleJobView{}, capsuleStepView{}, false); got != "example-org-my-app-actions-123-attempt-2" {
+		t.Fatalf("output name=%q", got)
+	}
+}
+
+func TestDefaultCapsuleOutputNameOmitsFirstAttempt(t *testing.T) {
+	ref := actionsRunRef{Repo: GitHubRepo{Owner: "example-org", Name: "my-app"}, RunID: "123", Attempt: 1}
+	if got := defaultCapsuleOutputName(ref, capsuleJobView{}, capsuleStepView{}, false); got != "example-org-my-app-actions-123" {
+		t.Fatalf("output name=%q", got)
+	}
+}
+
+func TestDefaultCapsuleOutputNameDisambiguatesSelectedFailure(t *testing.T) {
+	ref := actionsRunRef{Repo: GitHubRepo{Owner: "example-org", Name: "my-app"}, RunID: "123", Attempt: 1}
+	got := defaultCapsuleOutputName(ref, capsuleJobView{Name: "Windows"}, capsuleStepView{Name: "Test"}, true)
+	if got != "example-org-my-app-actions-123-windows-test" {
 		t.Fatalf("output name=%q", got)
 	}
 }
 
 func TestCapsuleIDDigestIncludesAttempt(t *testing.T) {
 	ref := actionsRunRef{Repo: GitHubRepo{Owner: "example-org", Name: "my-app"}, RunID: "123", Attempt: 1}
-	one := capsuleIDDigest(ref, "abc", "go test ./...")
+	one := capsuleIDDigest(ref, "abc", "go test ./...", "Go\nTest\nFAIL")
 	ref.Attempt = 2
-	two := capsuleIDDigest(ref, "abc", "go test ./...")
+	two := capsuleIDDigest(ref, "abc", "go test ./...", "Go\nTest\nFAIL")
 	if one == two {
 		t.Fatal("attempt-specific captures should not share capsule ids")
+	}
+}
+
+func TestCapsuleIDDigestIncludesSelectedFailure(t *testing.T) {
+	ref := actionsRunRef{Repo: GitHubRepo{Owner: "example-org", Name: "my-app"}, RunID: "123", Attempt: 1}
+	one := capsuleIDDigest(ref, "abc", "go test ./...", "Go\nTest\nFAIL")
+	two := capsuleIDDigest(ref, "abc", "go test ./...", "Windows\nTest\nFAIL")
+	if one == two {
+		t.Fatal("different selected failures should not share capsule ids")
+	}
+}
+
+func TestAppendActionsArtifactRefsSkipsExpiredAndPreservesPages(t *testing.T) {
+	got := appendActionsArtifactRefs(nil, []actionsArtifact{
+		{Name: "page-1", SizeInBytes: 10, ArchiveDownloadURL: "https://example.com/1"},
+		{Name: "expired", Expired: true, SizeInBytes: 20, ArchiveDownloadURL: "https://example.com/expired"},
+	})
+	got = appendActionsArtifactRefs(got, []actionsArtifact{
+		{Name: "page-2", SizeInBytes: 30, ArchiveDownloadURL: "https://example.com/2"},
+	})
+	if len(got) != 2 || got[0].Name != "page-1" || got[1].Name != "page-2" {
+		t.Fatalf("artifacts=%#v", got)
 	}
 }
 

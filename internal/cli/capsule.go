@@ -173,12 +173,15 @@ type actionsRunAPIResponse struct {
 }
 
 type actionsArtifactsResponse struct {
-	Artifacts []struct {
-		Name               string `json:"name"`
-		SizeInBytes        int64  `json:"size_in_bytes"`
-		Expired            bool   `json:"expired"`
-		ArchiveDownloadURL string `json:"archive_download_url"`
-	} `json:"artifacts"`
+	TotalCount int               `json:"total_count"`
+	Artifacts  []actionsArtifact `json:"artifacts"`
+}
+
+type actionsArtifact struct {
+	Name               string `json:"name"`
+	SizeInBytes        int64  `json:"size_in_bytes"`
+	Expired            bool   `json:"expired"`
+	ArchiveDownloadURL string `json:"archive_download_url"`
 }
 
 func (a App) capsuleFromActions(ctx context.Context, args []string) error {
@@ -215,6 +218,7 @@ func (a App) capsuleFromActions(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	runRef.Attempt = firstNonZero(runRef.Attempt, view.Attempt)
 	workflowPath, err := fetchActionsWorkflowPath(ctx, runRef)
 	if err != nil {
 		fmt.Fprintf(a.Stderr, "warning: workflow path unavailable: %v\n", err)
@@ -238,7 +242,7 @@ func (a App) capsuleFromActions(ctx context.Context, args []string) error {
 	}
 	dir := *outputDir
 	if dir == "" {
-		dir = filepath.Join("capsules", defaultCapsuleOutputName(runRef))
+		dir = filepath.Join("capsules", defaultCapsuleOutputName(runRef, job, step, *jobName != "" || capsuleRunHasMultipleFailures(view.Jobs)))
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "logs"), 0o755); err != nil {
 		return err
@@ -526,26 +530,40 @@ func fetchActionsWorkflowPath(ctx context.Context, ref actionsRunRef) (string, e
 }
 
 func fetchActionsArtifacts(ctx context.Context, ref actionsRunRef) ([]capsuleArtifactRef, error) {
-	out, err := ghOutput(ctx, "", "api", "repos/"+ref.Repo.Slug()+"/actions/runs/"+ref.RunID+"/artifacts")
-	if err != nil {
-		return nil, err
-	}
-	var res actionsArtifactsResponse
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		return nil, err
-	}
+	const pageSize = 100
 	artifacts := []capsuleArtifactRef{}
-	for _, artifact := range res.Artifacts {
+	seen := 0
+	for page := 1; ; page++ {
+		endpoint := fmt.Sprintf("repos/%s/actions/runs/%s/artifacts?per_page=%d&page=%d", ref.Repo.Slug(), ref.RunID, pageSize, page)
+		out, err := ghOutput(ctx, "", "api", endpoint)
+		if err != nil {
+			return nil, err
+		}
+		var res actionsArtifactsResponse
+		if err := json.Unmarshal([]byte(out), &res); err != nil {
+			return nil, err
+		}
+		artifacts = appendActionsArtifactRefs(artifacts, res.Artifacts)
+		seen += len(res.Artifacts)
+		if len(res.Artifacts) == 0 || len(res.Artifacts) < pageSize || (res.TotalCount > 0 && seen >= res.TotalCount) {
+			break
+		}
+	}
+	return artifacts, nil
+}
+
+func appendActionsArtifactRefs(dst []capsuleArtifactRef, src []actionsArtifact) []capsuleArtifactRef {
+	for _, artifact := range src {
 		if artifact.Expired {
 			continue
 		}
-		artifacts = append(artifacts, capsuleArtifactRef{
+		dst = append(dst, capsuleArtifactRef{
 			Name: artifact.Name,
 			URL:  artifact.ArchiveDownloadURL,
 			Size: artifact.SizeInBytes,
 		})
 	}
-	return artifacts, nil
+	return dst
 }
 
 func fetchActionsFailedLog(ctx context.Context, ref actionsRunRef) (string, error) {
@@ -604,10 +622,21 @@ func isFailureConclusion(conclusion string) bool {
 	}
 }
 
+func capsuleRunHasMultipleFailures(jobs []capsuleJobView) bool {
+	failures := 0
+	for _, job := range jobs {
+		if isFailureConclusion(job.Conclusion) {
+			failures++
+		}
+	}
+	return failures > 1
+}
+
 func buildActionsCapsuleManifest(ref actionsRunRef, view capsuleRunView, workflowPath string, job capsuleJobView, step capsuleStepView, scenario, replayCommand, requiredQuality, failureSignature string, logRef capsuleArtifactRef, artifacts []capsuleArtifactRef) capsuleManifest {
 	capturedAt := time.Now().UTC().Format(time.RFC3339)
-	capsuleID := "sha256:" + capsuleIDDigest(ref, view.HeadSHA, replayCommand)
+	ref.Attempt = firstNonZero(ref.Attempt, view.Attempt)
 	failureSignature = strings.TrimSpace(failureSignature)
+	capsuleID := "sha256:" + capsuleIDDigest(ref, view.HeadSHA, replayCommand, capsuleFailureIdentity(job, step, failureSignature))
 	successCondition := "The replay command exits non-zero."
 	nondeterminismBudget := "exit code must remain non-zero"
 	if failureSignature != "" {
@@ -630,7 +659,7 @@ func buildActionsCapsuleManifest(ref actionsRunRef, view capsuleRunView, workflo
 			Repo:         ref.Repo.Slug(),
 			RunID:        ref.RunID,
 			RunURL:       blank(view.URL, "https://github.com/"+ref.Repo.Slug()+"/actions/runs/"+ref.RunID),
-			Attempt:      firstNonZero(ref.Attempt, view.Attempt),
+			Attempt:      ref.Attempt,
 			WorkflowName: blank(view.WorkflowName, view.Name),
 			WorkflowPath: workflowPath,
 			JobName:      job.Name,
@@ -647,7 +676,7 @@ func buildActionsCapsuleManifest(ref actionsRunRef, view capsuleRunView, workflo
 		},
 		Inputs: capsuleInputs{
 			SourceSnapshotDigest: digestLabel("git", view.HeadSHA),
-			ActionsRunDigest:     digestLabel("github_actions_run", ref.Repo.Slug()+"#"+ref.RunID),
+			ActionsRunDigest:     digestLabel("github_actions_run", actionsRunIdentity(ref)),
 		},
 		Oracle: capsuleOracle{
 			Type:             "deterministic_rerun",
@@ -690,17 +719,46 @@ func buildActionsCapsuleManifest(ref actionsRunRef, view capsuleRunView, workflo
 	return manifest
 }
 
-func capsuleIDDigest(ref actionsRunRef, headSHA, replayCommand string) string {
-	sum := sha256.Sum256([]byte(ref.Repo.Slug() + "\n" + ref.RunID + "\n" + strconv.Itoa(ref.Attempt) + "\n" + headSHA + "\n" + replayCommand))
+func capsuleIDDigest(ref actionsRunRef, headSHA, replayCommand, failureIdentity string) string {
+	sum := sha256.Sum256([]byte(actionsRunIdentity(ref) + "\n" + headSHA + "\n" + replayCommand + "\n" + failureIdentity))
 	return hex.EncodeToString(sum[:])
 }
 
-func defaultCapsuleOutputName(ref actionsRunRef) string {
-	name := ref.Repo.Owner + "-" + ref.Repo.Name + "-actions-" + ref.RunID
+func actionsRunIdentity(ref actionsRunRef) string {
+	identity := ref.Repo.Slug() + "#" + ref.RunID
 	if ref.Attempt > 0 {
+		identity += "#attempt-" + strconv.Itoa(ref.Attempt)
+	}
+	return identity
+}
+
+func defaultCapsuleOutputName(ref actionsRunRef, job capsuleJobView, step capsuleStepView, disambiguateFailure bool) string {
+	name := ref.Repo.Owner + "-" + ref.Repo.Name + "-actions-" + ref.RunID
+	if ref.Attempt > 1 {
 		name += "-attempt-" + strconv.Itoa(ref.Attempt)
 	}
+	if disambiguateFailure {
+		name += "-" + capsuleFailurePathSuffix(job, step)
+	}
 	return safePathComponent(name)
+}
+
+func capsuleFailureIdentity(job capsuleJobView, step capsuleStepView, failureSignature string) string {
+	return strings.TrimSpace(job.Name) + "\n" + strings.TrimSpace(step.Name) + "\n" + strings.TrimSpace(failureSignature)
+}
+
+func capsuleFailurePathSuffix(job capsuleJobView, step capsuleStepView) string {
+	parts := []string{}
+	if name := strings.TrimSpace(job.Name); name != "" {
+		parts = append(parts, name)
+	}
+	if name := strings.TrimSpace(step.Name); name != "" {
+		parts = append(parts, name)
+	}
+	if len(parts) == 0 {
+		return "failure"
+	}
+	return strings.Join(parts, "-")
 }
 
 func digestLabel(kind, value string) string {
@@ -774,7 +832,7 @@ func filterActionsLogForSelection(logText, jobName, stepName string) string {
 	}
 	var b strings.Builder
 	for _, line := range strings.Split(logText, "\n") {
-		fields := strings.Split(line, "\t")
+		fields := strings.SplitN(line, "\t", 3)
 		if len(fields) < 3 {
 			continue
 		}
@@ -791,19 +849,31 @@ func filterActionsLogForSelection(logText, jobName, stepName string) string {
 }
 
 func stripGitHubLogPrefix(line string) string {
-	fields := strings.Split(line, "\t")
+	fields := strings.SplitN(line, "\t", 3)
 	if len(fields) >= 3 {
-		line = fields[len(fields)-1]
+		line = fields[2]
 	}
 	line = strings.TrimSpace(line)
 	line = strings.TrimPrefix(line, "\ufeff")
-	if len(line) > len(time.RFC3339Nano) && line[4] == '-' && line[7] == '-' && line[10] == 'T' {
+	if lineHasGitHubTimestampPrefix(line) {
 		if space := strings.IndexByte(line, ' '); space > 0 {
 			line = strings.TrimSpace(line[space+1:])
 		}
 	}
 	line = strings.TrimPrefix(line, "##[error]")
 	return strings.TrimSpace(line)
+}
+
+func lineHasGitHubTimestampPrefix(line string) bool {
+	if len(line) < 20 || line[4] != '-' || line[7] != '-' || line[10] != 'T' {
+		return false
+	}
+	space := strings.IndexByte(line, ' ')
+	if space < 0 {
+		return false
+	}
+	_, err := time.Parse(time.RFC3339Nano, line[:space])
+	return err == nil
 }
 
 func isLowSignalActionsLogLine(line string) bool {
