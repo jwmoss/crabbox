@@ -47,6 +47,7 @@ summary_phase="init"
 blocker_message=""
 blocker_remediation=""
 blocker_commands=""
+provider_identity_log=""
 aws_policy_log=""
 mac_host_policy_log=""
 macos_image_policy_log=""
@@ -210,7 +211,7 @@ cleanup() {
 write_summary() {
   local result="$1"
   local phase="$2"
-  local aws_policy_log_path mac_host_policy_log_path macos_image_policy_log_path offerings_log_path hosts_log_path
+  local provider_identity_log_path aws_policy_log_path mac_host_policy_log_path macos_image_policy_log_path offerings_log_path hosts_log_path
   local region_preflight_log_path
   local dry_log_path allocate_log_path image_create_log_path image_promote_log_path
   local quota_log_path
@@ -222,6 +223,7 @@ write_summary() {
   summary_result="$result"
   summary_phase="$phase"
   mkdir -p "$artifact_root"
+  provider_identity_log_path="$(existing_file_or_empty "$provider_identity_log")"
   aws_policy_log_path="$(existing_file_or_empty "$aws_policy_log")"
   mac_host_policy_log_path="$(existing_file_or_empty "$mac_host_policy_log")"
   macos_image_policy_log_path="$(existing_file_or_empty "$macos_image_policy_log")"
@@ -270,6 +272,7 @@ write_summary() {
     --arg blockerMessage "$blocker_message" \
     --arg blockerRemediation "$blocker_remediation" \
     --arg blockerCommands "$blocker_commands" \
+    --arg providerIdentityLog "$provider_identity_log_path" \
     --arg awsPolicyLog "$aws_policy_log_path" \
     --arg macHostPolicyLog "$mac_host_policy_log_path" \
     --arg macosImagePolicyLog "$macos_image_policy_log_path" \
@@ -333,6 +336,7 @@ write_summary() {
         promoted: maybe_path($promotedArtifactDir)
       },
       evidence: {
+        providerIdentity: maybe_path($providerIdentityLog),
         awsProviderPolicy: maybe_path($awsPolicyLog),
         macHostPolicy: maybe_path($macHostPolicyLog),
         macosImagePolicy: maybe_path($macosImagePolicyLog),
@@ -458,6 +462,7 @@ log_line() {
 }
 
 set_evidence_paths() {
+  provider_identity_log="$evidence_dir/provider-identity.json"
   aws_policy_log="$evidence_dir/aws-provider-policy.json"
   mac_host_policy_log="$evidence_dir/mac-host-policy.json"
   macos_image_policy_log="$evidence_dir/macos-image-policy.json"
@@ -682,6 +687,7 @@ set_evidence_paths
 select_region_from_preflight
 write_summary running preflight
 printf 'macOS lifecycle smoke region=%s type=%s image=%s host-wait=%s\n' "$region" "$instance_type" "$image_name" "$host_wait_timeout"
+preflight_command provider-identity "provider identity" "$provider_identity_log" "$CRABBOX_BIN" admin providers identity --provider aws --region "$region" --json
 preflight_command provider-policy "aws provider policy" "$aws_policy_log" "$CRABBOX_BIN" admin providers policy --provider aws
 preflight_command mac-host-policy "mac host policy" "$mac_host_policy_log" "$CRABBOX_BIN" admin hosts policy --provider aws --target macos
 preflight_command macos-image-policy "macOS image policy" "$macos_image_policy_log" "$CRABBOX_BIN" admin providers policy --provider aws --target macos

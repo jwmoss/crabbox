@@ -42,6 +42,11 @@ if [[ "$1" == "admin" && "$2" == "providers" && "$3" == "policy" ]]; then
   exit 0
 fi
 
+if [[ "$1" == "admin" && "$2" == "providers" && "$3" == "identity" ]]; then
+  printf '{"account":"123456789012","arn":"arn:aws:iam::123456789012:user/crabbox-runner","userId":"AIDAEXAMPLE","region":"%s","policyTarget":{"type":"user","name":"crabbox-runner","source":"iam-user"}}\\n' "$region"
+  exit 0
+fi
+
 if [[ "$1" == "admin" && "$2" == "aws-policy" ]]; then
   if [[ " $* " == *" --mac-hosts "* ]]; then
     printf '{"Statement":[{"Action":["ec2:RunInstances","ec2:AllocateHosts"]}]}\\n'
@@ -248,6 +253,7 @@ test("macOS lifecycle smoke writes a blocked IAM summary before paid work", asyn
     'test "$local_account" = "$coordinator_account"',
     "crabbox admin hosts allocate --provider aws --target macos --region eu-west-1 --type mac2.metal --dry-run --json",
   ]);
+  await assertFileContains(summary.evidence.providerIdentity, /crabbox-runner/);
   await assertFileContains(summary.evidence.awsProviderPolicy, /ec2:RunInstances/);
   await assertFileContains(summary.evidence.macHostPolicy, /ec2:AllocateHosts/);
   await assertFileContains(summary.evidence.macosImagePolicy, /ec2:AllocateHosts/);
@@ -419,6 +425,7 @@ test("macOS lifecycle smoke preserves full mock lifecycle evidence", async () =>
   }
   await assertFileContains(summary.evidence.imageCreate, /ami-mock/);
   await assertFileContains(summary.evidence.imagePromote, /"target":"macos"/);
+  await assertFileContains(summary.evidence.providerIdentity, /crabbox-runner/);
   await assertFileContains(summary.evidence.awsProviderPolicy, /ec2:RunInstances/);
   await assertFileContains(summary.evidence.macHostPolicy, /ec2:AllocateHosts/);
   await assertFileContains(summary.evidence.macosImagePolicy, /ec2:AllocateHosts/);
