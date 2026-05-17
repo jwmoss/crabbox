@@ -80,28 +80,55 @@ Read when:
 
 ## Command docs
 
-- [doctor](../commands/doctor.md)
-- [init](../commands/init.md)
-- [warmup](../commands/warmup.md)
-- [run](../commands/run.md)
-- [history](../commands/history.md)
-- [logs](../commands/logs.md)
-- [results](../commands/results.md)
-- [artifacts](../commands/artifacts.md)
-- [cache](../commands/cache.md)
-- [status](../commands/status.md)
-- [list](../commands/list.md)
-- [usage](../commands/usage.md)
-- [ssh](../commands/ssh.md)
-- [vnc](../commands/vnc.md)
-- [inspect](../commands/inspect.md)
-- [stop](../commands/stop.md)
-- [actions](../commands/actions.md)
-- [capsule](../commands/capsule.md)
-- [checkpoint](../commands/checkpoint.md)
-- [cleanup](../commands/cleanup.md)
-- [config](../commands/config.md)
-- [login](../commands/login.md)
-- [logout](../commands/logout.md)
-- [whoami](../commands/whoami.md)
-- [admin](../commands/admin.md)
+### Setup and configuration
+- [init](../commands/init.md) — initialize repo config
+- [login](../commands/login.md) — authenticate with broker
+- [logout](../commands/logout.md) — clear broker token
+- [whoami](../commands/whoami.md) — show authenticated user
+- [config](../commands/config.md) — show merged config
+- [doctor](../commands/doctor.md) — validate prerequisites
+
+### Lease lifecycle
+- [warmup](../commands/warmup.md) — provision a warm box
+- [run](../commands/run.md) — sync and run command
+- [job](../commands/job.md) — run named repo job
+- [status](../commands/status.md) — show lease status
+- [list](../commands/list.md) — list active leases
+- [stop](../commands/stop.md) — release lease
+- [cleanup](../commands/cleanup.md) — cleanup stale leases
+
+### Workspace management
+- [sync-plan](../commands/sync-plan.md) — preview sync manifest
+- [actions](../commands/actions.md) — hydrate with GitHub Actions
+- [capsule](../commands/capsule.md) — capture/replay Actions failures
+- [checkpoint](../commands/checkpoint.md) — snapshot/restore/fork workspaces
+- [cache](../commands/cache.md) — manage remote caches
+- [image](../commands/image.md) — manage provider images
+
+### Run observation
+- [history](../commands/history.md) — list run history
+- [logs](../commands/logs.md) — show run logs
+- [events](../commands/events.md) — show run events
+- [attach](../commands/attach.md) — attach to active run
+- [results](../commands/results.md) — show test results
+- [artifacts](../commands/artifacts.md) — manage run artifacts
+- [media](../commands/media.md) — capture screenshots/video
+
+### Interactive access
+- [ssh](../commands/ssh.md) — SSH to lease
+- [desktop](../commands/desktop.md) — desktop/input commands
+- [vnc](../commands/vnc.md) — native VNC access
+- [webvnc](../commands/webvnc.md) — browser-based VNC
+- [code](../commands/code.md) — code-server access
+- [screenshot](../commands/screenshot.md) — capture screenshots
+- [egress](../commands/egress.md) — mediated egress proxy
+
+### Collaboration
+- [share](../commands/share.md) — share lease access
+- [unshare](../commands/unshare.md) — revoke shared access
+
+### Operations
+- [inspect](../commands/inspect.md) — detailed lease info
+- [usage](../commands/usage.md) — cost and usage reports
+- [admin](../commands/admin.md) — admin operations
+- [azure](../commands/azure.md) — Azure-specific commands
