@@ -6,6 +6,10 @@
 
 - Added an account-guarded EC2 Mac Dedicated Host quota request helper for turning macOS lifecycle smoke quota evidence into a dry-run or explicit AWS Service Quotas request.
 
+### Changed
+
+- Clarified WebVNC docs to include coordinator-backed AWS macOS desktop leases in the supported portal bridge surface.
+
 ## 0.15.0 - 2026-05-17
 
 ### Added
