@@ -22,6 +22,10 @@ async function setup(account = "123456789012") {
     `#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1 $2 $3" == "admin providers identity" ]]; then
+  if [[ "\${CRABBOX_FAKE_IDENTITY_FAIL:-0}" == "1" ]]; then
+    printf 'identity failed\\n' >&2
+    exit 1
+  fi
   printf '{"account":"%s","arn":"arn:aws:iam::%s:user/crabbox-runner","region":"eu-west-1","policyTarget":{"type":"user","name":"crabbox-runner","source":"iam-user"}}\\n' "${account}" "${account}"
   exit 0
 fi
@@ -169,4 +173,22 @@ test("macOS coordinator remediation audit reports ready when dry-run, quota, and
   assert.deepEqual(summary.blockers, []);
   assert.match(summary.evidence.iamApplyDryRun.stdoutText, /dry-run: aws iam put-user-policy/);
   assert.match(summary.evidence.quotaRequestDryRun.stdoutText, /quota already sufficient/);
+});
+
+test("macOS coordinator remediation audit blocks when required evidence failed", async () => {
+  const ctx = await setup("123456789012");
+  const result = await runAudit(ctx, {
+    CRABBOX_FAKE_DRY_OK: "1",
+    CRABBOX_FAKE_QUOTA_VALUE: "1",
+    CRABBOX_FAKE_IDENTITY_FAIL: "1",
+  });
+
+  assert.equal(result.code, 1, result.stdout + result.stderr);
+  const summary = JSON.parse(await readFile(path.join(ctx.artifacts, "summary.json"), "utf8"));
+  assert.equal(summary.result, "blocked");
+  assert.equal(summary.ready.hostDryRun, true);
+  assert.equal(summary.ready.hostQuota, true);
+  assert.ok(summary.blockers.includes("provider-identity"));
+  assert.ok(summary.blockers.includes("iam-apply-dry-run"));
+  assert.ok(summary.blockers.includes("quota-request-dry-run"));
 });

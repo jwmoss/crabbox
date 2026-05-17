@@ -198,8 +198,8 @@ blockers_json="$(
 )"
 
 result="blocked"
-if [[ "$host_dry_ok" == "true" && "$quota_ok" == "true" ]]; then
-  result="ready-for-paid-smoke"
+if [[ "$host_dry_ok" == "true" && "$quota_ok" == "true" ]] && jq -e 'length == 0' <<<"$blockers_json" >/dev/null; then
+	result="ready-for-paid-smoke"
 fi
 
 jq -n \
