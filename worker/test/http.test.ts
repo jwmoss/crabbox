@@ -314,6 +314,23 @@ describe("http responses", () => {
     });
   });
 
+  it("handles circular arrays while redacting response payloads", async () => {
+    const circular: unknown[] = [];
+    circular.push(circular);
+
+    const response = json({ circular });
+
+    expect(await response.json()).toEqual({ circular: ["[Circular]"] });
+  });
+
+  it("handles self-returning toJSON methods while redacting response payloads", async () => {
+    const value = { ok: true, stack: "hidden", toJSON: () => value };
+
+    const response = json({ value });
+
+    expect(await response.json()).toEqual({ value: { ok: true } });
+  });
+
   it("keeps public error messages to the first line", () => {
     expect(errorMessage(new Error("boom\n    at hidden"))).toBe("boom");
   });
