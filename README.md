@@ -440,9 +440,9 @@ npm run build --prefix worker
 npm run docs:check
 
 # Optional live smoke, when broker/provider credentials are available
-CRABBOX_LIVE=1 CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
 # Add Blacksmith only for repos with a Testbox workflow.
-CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=blacksmith-testbox scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=blacksmith-testbox CRABBOX_BLACKSMITH_WORKFLOW=.github/workflows/testbox.yml scripts/live-smoke.sh
 # Cloudflare Containers deploy plus live smoke, when Cloudflare credentials are available.
 scripts/deploy-cloudflare-smoke.sh
 ```

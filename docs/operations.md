@@ -36,28 +36,33 @@ bin/crabbox history --limit 5
 When broker/provider credentials are available and infra changed, run the live smoke:
 
 ```sh
-CRABBOX_LIVE=1 CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
 ```
 
 To narrow the live matrix while debugging, set `CRABBOX_LIVE_PROVIDERS`:
 
 ```sh
-CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=aws CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
-CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=hetzner CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
-CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=blacksmith-testbox CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
-CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=e2b CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
-CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=modal CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
-CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=daytona CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
-CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=namespace-devbox CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
-CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=semaphore CRABBOX_LIVE_REPO=/path/to/openclaw scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=aws CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=hetzner CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=blacksmith-testbox CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=e2b CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=modal CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=daytona CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=namespace-devbox CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=semaphore CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
+CRABBOX_LIVE=1 CRABBOX_LIVE_PROVIDERS=sprites CRABBOX_LIVE_REPO=/path/to/my-app scripts/live-smoke.sh
 ```
 
-E2B smoke requires `E2B_API_KEY`. Modal smoke requires an authenticated Modal
-Python client (`python3 -m modal setup` or Modal token env vars). Semaphore smoke requires
-`CRABBOX_SEMAPHORE_HOST`, `CRABBOX_SEMAPHORE_PROJECT`, and
-`CRABBOX_SEMAPHORE_TOKEN` or equivalent user config.
-Daytona needs `CRABBOX_DAYTONA_SNAPSHOT` or `daytona.snapshot`.
-Namespace needs the authenticated `devbox` CLI on `PATH`.
+Blacksmith smoke requires a workflow containing a `useblacksmith/testbox`,
+`useblacksmith/begin-testbox`, or `useblacksmith/run-testbox` step; set
+`CRABBOX_BLACKSMITH_WORKFLOW` when the default path is not correct. E2B smoke
+requires `E2B_API_KEY`. Modal smoke requires an authenticated Modal Python
+client (`python3 -m modal setup` or Modal token env vars). Semaphore smoke
+requires `CRABBOX_SEMAPHORE_HOST`, `CRABBOX_SEMAPHORE_PROJECT`, and
+`CRABBOX_SEMAPHORE_TOKEN` or equivalent user config. Daytona needs
+`CRABBOX_DAYTONA_SNAPSHOT`, `DAYTONA_SNAPSHOT`, or `daytona.snapshot`.
+Namespace needs the authenticated `devbox` CLI on `PATH`. Sprites needs the
+authenticated `sprite` CLI on `PATH` plus a Sprites token in the environment.
 
 For direct-provider smoke, disable the coordinator with a scratch config and run the same commands manually:
 
@@ -97,7 +102,7 @@ health checks for `crabbox.openclaw.ai` plus the workers.dev fallback. To includ
 a short AWS lease smoke after deploy:
 
 ```sh
-CRABBOX_DEPLOY_SMOKE_AWS=1 CRABBOX_LIVE_REPO=/path/to/openclaw scripts/deploy-worker-smoke.sh
+CRABBOX_DEPLOY_SMOKE_AWS=1 CRABBOX_LIVE_REPO=/path/to/my-app scripts/deploy-worker-smoke.sh
 ```
 
 Required Worker secrets:
