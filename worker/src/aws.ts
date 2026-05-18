@@ -238,6 +238,10 @@ export class EC2SpotClient {
     );
   }
 
+  async refreshSSHIngress(config: LeaseConfig): Promise<void> {
+    await this.ensureSecurityGroup(config);
+  }
+
   async createServerWithFallback(
     config: LeaseConfig,
     leaseID: string,

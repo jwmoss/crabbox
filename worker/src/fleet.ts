@@ -1139,7 +1139,7 @@ export class FleetDurableObject implements DurableObject {
         idleTimeoutSeconds?: number;
         telemetry?: Partial<LeaseTelemetry>;
       }>(request);
-      await this.applyLeaseHeartbeat(lease, body);
+      await this.applyLeaseHeartbeat(lease, body, request);
       return json({ lease });
     }
     if (method === "POST" && action === "tailscale") {
@@ -1168,6 +1168,7 @@ export class FleetDurableObject implements DurableObject {
       idleTimeoutSeconds?: number;
       telemetry?: Partial<LeaseTelemetry>;
     },
+    request?: Request,
   ): Promise<void> {
     const now = new Date();
     const requestedIdleTimeoutSeconds = input.idleTimeoutSeconds;
@@ -1188,7 +1189,41 @@ export class FleetDurableObject implements DurableObject {
     lease.expiresAt = recomputeLeaseExpiresAt(lease, now).toISOString();
     clearLeaseCleanupMetadata(lease);
     await this.putLease(lease);
+    await this.refreshLeaseSSHIngress(lease, request);
     await this.scheduleAlarm();
+  }
+
+  private async refreshLeaseSSHIngress(lease: LeaseRecord, request: Request | undefined) {
+    if (!request || lease.provider !== "aws" || lease.state !== "active") {
+      return;
+    }
+    const cidrs = requestSourceCIDRs(request);
+    if (cidrs.length === 0) {
+      return;
+    }
+    try {
+      const config = leaseConfig({
+        provider: "aws",
+        target: lease.target,
+        windowsMode: lease.windowsMode ?? "normal",
+        class: lease.class,
+        serverType: lease.serverType,
+        awsSSHCIDRs: cidrs,
+        capacity: { market: lease.market === "spot" ? "spot" : "on-demand" },
+        providerKey: lease.providerKey,
+        sshUser: lease.sshUser,
+        sshPort: lease.sshPort,
+        sshFallbackPorts: lease.sshFallbackPorts ?? [],
+        sshPublicKey: "ssh-ed25519 heartbeat-refresh",
+        workRoot: lease.workRoot,
+        ...(lease.hostId || lease.hostID ? { hostId: lease.hostId || lease.hostID } : {}),
+        ...(lease.region ? { awsRegion: lease.region } : {}),
+      });
+      const provider = this.provider("aws", lease.region || config.awsRegion);
+      await provider.refreshSSHIngress?.(config);
+    } catch (error) {
+      console.warn(`refresh AWS SSH ingress failed for ${lease.id}: ${errorMessage(error)}`);
+    }
   }
 
   private async prepareTailscaleConfig(
@@ -6060,6 +6095,7 @@ function parseProviderLabelTime(value: string | undefined): number {
 interface CloudProvider {
   listCrabboxServers(): Promise<ProviderMachine[]>;
   getServer?(id: string): Promise<ProviderMachine>;
+  refreshSSHIngress?(config: ReturnType<typeof leaseConfig>): Promise<void>;
   createServerWithFallback(
     config: ReturnType<typeof leaseConfig>,
     leaseID: string,
@@ -6276,6 +6312,12 @@ class AWSProvider implements CloudProvider {
 
   getServer(id: string): Promise<ProviderMachine> {
     return this.client.getServer(id);
+  }
+
+  refreshSSHIngress(config: ReturnType<typeof leaseConfig>): Promise<void> {
+    const region = config.awsRegion || this.region;
+    const client = region === this.region ? this.client : new EC2SpotClient(this.env, region);
+    return client.refreshSSHIngress(config);
   }
 
   async createServerWithFallback(

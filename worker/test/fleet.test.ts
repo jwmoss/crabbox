@@ -228,6 +228,59 @@ describe("fleet lease identity and idle", () => {
     expect(storage.alarm()).toBe(Date.parse(lease.expiresAt));
   });
 
+  it("refreshes AWS SSH ingress from the heartbeat request source", async () => {
+    const storage = new MemoryStorage();
+    const refreshed: LeaseConfig[] = [];
+    const fleet = testFleet(storage, {
+      aws: fakeProvider(undefined, {
+        provider: "aws",
+        onRefreshSSHIngress(config) {
+          refreshed.push(config);
+        },
+      }),
+    });
+    storage.seed(
+      "lease:cbx_000000000001",
+      testLease({
+        id: "cbx_000000000001",
+        provider: "aws",
+        target: "macos",
+        owner: "alice@example.com",
+        org: "example-org",
+        region: "eu-west-1",
+        serverType: "mac2.metal",
+        providerKey: "crabbox-cbx-000000000001",
+        sshUser: "ec2-user",
+        sshPort: "2222",
+        sshFallbackPorts: ["22"],
+        workRoot: "/Users/ec2-user/crabbox",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    );
+
+    const heartbeat = await fleet.fetch(
+      request("POST", "/v1/leases/cbx_000000000001/heartbeat", {
+        headers: {
+          "cf-connecting-ip": "198.51.100.44",
+          "x-crabbox-owner": "alice@example.com",
+          "x-crabbox-org": "example-org",
+        },
+        body: {},
+      }),
+    );
+
+    expect(heartbeat.status).toBe(200);
+    expect(refreshed).toHaveLength(1);
+    expect(refreshed[0]).toMatchObject({
+      provider: "aws",
+      target: "macos",
+      awsRegion: "eu-west-1",
+      awsSSHCIDRs: ["198.51.100.44/32"],
+      sshPort: "2222",
+      sshFallbackPorts: ["22"],
+    });
+  });
+
   it("does not postpone the first AWS orphan sweep alarm on repeated scheduling", async () => {
     const storage = new MemoryStorage();
     storage.seed(
@@ -5676,6 +5729,7 @@ function fakeProvider(
     ) => void;
     onGetImage?: (imageID: string, kind?: string) => Promise<ProviderImage> | ProviderImage;
     onDeleteImage?: (imageID: string, kind?: string) => void;
+    onRefreshSSHIngress?: (config: LeaseConfig) => void;
   } = {},
   onDelete?: (id: string) => Promise<void>,
   onGet?: (id: string) => Promise<ProviderMachine> | ProviderMachine,
@@ -5699,6 +5753,9 @@ function fakeProvider(
         host: "192.0.2.10",
         labels: {},
       };
+    },
+    async refreshSSHIngress(config: LeaseConfig) {
+      result.onRefreshSSHIngress?.(config);
     },
     async createServerWithFallback(config: LeaseConfig, _leaseID: string, slug: string) {
       onCreate?.(config);
