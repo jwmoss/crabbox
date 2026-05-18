@@ -156,6 +156,7 @@ test("AWS devtools mint wrapper maps windows flags", async () => {
   const log = await readFile(fake.log, "utf8");
   assert.match(log, /env CRABBOX_AWS_REGION=us-east-1 AWS_REGION=us-east-1 CRABBOX_AWS_AMI= args warmup --provider aws --target windows/);
   assert.match(log, /--windows-mode normal/);
+  assert.doesNotMatch(log, /--desktop/);
   assert.doesNotMatch(log, /--browser/);
   assert.doesNotMatch(log, /warmup .*--region us-east-1/);
   assert.match(log, /run --provider aws --target windows --id cbx_source --no-sync --shell -- New-Item/);

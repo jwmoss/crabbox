@@ -213,6 +213,9 @@ script installs common CLI/build tooling, GitHub CLI, Node 24, corepack/pnpm,
 and Windows Server container support with Docker Engine. It deliberately avoids
 Docker Desktop because headless image bakes should not depend on a user-session
 desktop app or Docker Desktop licensing.
+Windows developer bakes are headless by default for faster boot and fewer
+desktop-bootstrap moving parts. Pass `--desktop` only when the image is meant
+to back interactive desktop leases.
 
 Windows container support can require one reboot before Docker starts. The
 wrapper detects the prep script's reboot marker, reboots the source lease,

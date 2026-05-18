@@ -16,7 +16,7 @@ reboot_settle_seconds="${CRABBOX_IMAGE_REBOOT_SETTLE_SECONDS:-30}"
 run="${CRABBOX_IMAGE_RUN:-0}"
 promote="${CRABBOX_IMAGE_PROMOTE:-1}"
 keep_lease="${CRABBOX_IMAGE_KEEP_LEASE:-0}"
-desktop="${CRABBOX_IMAGE_DESKTOP:-1}"
+desktop="${CRABBOX_IMAGE_DESKTOP:-auto}"
 browser="${CRABBOX_IMAGE_BROWSER:-auto}"
 windows_mode="${CRABBOX_WINDOWS_MODE:-normal}"
 prep_script="${CRABBOX_IMAGE_PREP_SCRIPT:-}"
@@ -39,6 +39,7 @@ Flags:
   --run                 allow paid lease/image work
   --no-promote          smoke candidate only
   --keep-lease          keep proof leases alive
+  --desktop             request desktop bootstrap
   --no-desktop          do not request desktop bootstrap
   --no-browser          do not request browser bootstrap on Linux
   --windows-mode MODE   normal or wsl2, default normal
@@ -95,6 +96,10 @@ while [[ "$#" -gt 0 ]]; do
       keep_lease=1
       shift
       ;;
+    --desktop)
+      desktop=1
+      shift
+      ;;
     --no-desktop)
       desktop=0
       shift
@@ -148,6 +153,13 @@ if [[ "$browser" == "auto" ]]; then
     browser=1
   else
     browser=0
+  fi
+fi
+if [[ "$desktop" == "auto" ]]; then
+  if [[ "$target" == "windows" ]]; then
+    desktop=0
+  else
+    desktop=1
   fi
 fi
 
