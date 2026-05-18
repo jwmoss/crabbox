@@ -23,7 +23,7 @@ async function setupFakeCrabbox() {
     fake,
     `#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\\n' "$*" >>"\${CRABBOX_FAKE_LOG:?}"
+printf 'env CRABBOX_AWS_REGION=%s AWS_REGION=%s CRABBOX_AWS_AMI=%s args %s\\n' "\${CRABBOX_AWS_REGION:-}" "\${AWS_REGION:-}" "\${CRABBOX_AWS_AMI:-}" "$*" >>"\${CRABBOX_FAKE_LOG:?}"
 case "$1" in
   warmup)
     count_file="\${CRABBOX_FAKE_LOG}.count"
@@ -103,8 +103,10 @@ test("AWS devtools mint wrapper runs linux source candidate and promoted proof",
   assert.match(result.stdout, /candidate AMI smoke passed: ami-devtools/);
   assert.match(result.stdout, /promoted linux developer image passed: ami-devtools/);
   const log = await readFile(fake.log, "utf8");
-  assert.match(log, /warmup --provider aws --target linux/);
+  assert.match(log, /env CRABBOX_AWS_REGION=us-west-2 AWS_REGION=us-west-2 CRABBOX_AWS_AMI= args warmup --provider aws --target linux/);
+  assert.match(log, /env CRABBOX_AWS_REGION=us-west-2 AWS_REGION=us-west-2 CRABBOX_AWS_AMI=ami-devtools args warmup --provider aws --target linux/);
   assert.match(log, /--browser/);
+  assert.doesNotMatch(log, /warmup .*--region us-west-2/);
   assert.match(log, /run --provider aws --target linux --id cbx_source --no-sync --script/);
   assert.match(log, /image create --id cbx_source --name crabbox-linux-devtools-/);
   assert.match(log, /image promote ami-devtools --target linux --json --region us-west-2/);
@@ -134,9 +136,10 @@ test("AWS devtools mint wrapper maps windows flags", async () => {
   );
   assert.equal(result.code, 0, result.stderr);
   const log = await readFile(fake.log, "utf8");
-  assert.match(log, /warmup --provider aws --target windows/);
+  assert.match(log, /env CRABBOX_AWS_REGION=us-east-1 AWS_REGION=us-east-1 CRABBOX_AWS_AMI= args warmup --provider aws --target windows/);
   assert.match(log, /--windows-mode normal/);
   assert.doesNotMatch(log, /--browser/);
+  assert.doesNotMatch(log, /warmup .*--region us-east-1/);
   assert.match(log, /run --provider aws --target windows --id cbx_source --no-sync --script/);
   assert.doesNotMatch(log, /image promote/);
 });

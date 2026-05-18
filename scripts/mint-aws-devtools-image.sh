@@ -170,7 +170,6 @@ run_cmd() {
 
 warmup_args() {
   printf '%s\0' warmup --provider aws --target "$target" --market on-demand --ttl "$ttl" --idle-timeout "$idle_timeout" --timing-json
-  [[ -n "$region" ]] && printf '%s\0' --region "$region"
   [[ -n "$server_type" ]] && printf '%s\0' --type "$server_type"
   [[ "$desktop" == "1" ]] && printf '%s\0' --desktop
   [[ "$browser" == "1" ]] && printf '%s\0' --browser
@@ -200,9 +199,12 @@ warmup() {
   mkdir -p .crabbox
   local -a args
   while IFS= read -r -d '' arg; do args+=("$arg"); done < <(warmup_args)
+  local -a env_args=()
+  [[ -n "$region" ]] && env_args+=(CRABBOX_AWS_REGION="$region" AWS_REGION="$region")
+  [[ "$label" == "candidate" ]] && env_args+=(CRABBOX_AWS_AMI="$2")
   printf 'warming %s lease\n' "$label" >&2
-  if [[ "$label" == "candidate" ]]; then
-    CRABBOX_AWS_AMI="$2" run_cmd "$CRABBOX_BIN" "${args[@]}" 2>&1 | tee "$log" >&2
+  if [[ "${#env_args[@]}" -gt 0 ]]; then
+    run_cmd env "${env_args[@]}" "$CRABBOX_BIN" "${args[@]}" 2>&1 | tee "$log" >&2
   else
     run_cmd "$CRABBOX_BIN" "${args[@]}" 2>&1 | tee "$log" >&2
   fi
