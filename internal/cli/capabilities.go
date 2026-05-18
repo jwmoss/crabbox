@@ -63,7 +63,7 @@ func enforceManagedLeaseCapabilities(cfg Config, server Server, leaseID string) 
 	if isStaticProvider(cfg.Provider) || server.Provider == staticProvider {
 		return nil
 	}
-	if cfg.Desktop && !labelBool(server.Labels["desktop"]) {
+	if cfg.Desktop && !labelBool(server.Labels["desktop"]) && !macOSScreenSharingLease(cfg, server) {
 		return exit(2, "lease %s was not created with desktop=true; warm a new lease with --desktop", leaseID)
 	}
 	if cfg.Browser && !labelBool(server.Labels["browser"]) {
@@ -73,6 +73,10 @@ func enforceManagedLeaseCapabilities(cfg Config, server Server, leaseID string) 
 		return exit(2, "lease %s was not created with code=true; warm a new lease with --code", leaseID)
 	}
 	return nil
+}
+
+func macOSScreenSharingLease(cfg Config, server Server) bool {
+	return cfg.TargetOS == targetMacOS || strings.EqualFold(server.Labels["target"], targetMacOS)
 }
 
 func labelBool(value string) bool {

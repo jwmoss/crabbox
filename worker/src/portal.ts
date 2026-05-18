@@ -430,8 +430,11 @@ export function portalMacHostDetail(
   const stateTone = macHostStateTone(host.state);
   const hostID = shortHostID(host.id);
   const startDesktopCommand = activeLease ? "" : macHostStartDesktopCommand(host);
+  const activeLeaseVNC = activeLease
+    ? activeLease.desktop === true || activeLease.target === "macos"
+    : false;
   const vncAction =
-    activeLease?.desktop === true
+    activeLease && activeLeaseVNC
       ? `<a class="button" href="/portal/leases/${encodeURIComponent(activeLease.id)}/vnc">open VNC</a>`
       : activeLease
         ? `<form method="post" action="${macHostVNCPath(host)}"><button class="button" type="submit">enable VNC</button></form>`
@@ -447,7 +450,7 @@ export function portalMacHostDetail(
           "run",
           `crabbox run --id ${shellArg(activeLease.slug || activeLease.id)} -- <command>`,
         ),
-        activeLease.desktop ? commandBlock("WebVNC bridge", webVNCBridgeCommand(activeLease)) : "",
+        activeLeaseVNC ? commandBlock("WebVNC bridge", webVNCBridgeCommand(activeLease)) : "",
         activeLease.code ? commandBlock("code bridge", codeBridgeCommand(activeLease)) : "",
       ]
         .filter(Boolean)
@@ -498,7 +501,7 @@ export function portalMacHostDetail(
                   ${metaRow("lease", activeLease.slug ? `${activeLease.slug} / ${activeLease.id}` : activeLease.id)}
                   ${metaRow("host", activeLease.host || "pending")}
                   ${metaRow("ssh", activeLease.sshPort ? `${activeLease.sshUser || "crabbox"}@${activeLease.host || "host"}:${activeLease.sshPort}` : "pending")}
-                  ${metaRow("desktop", activeLease.desktop ? "enabled" : "disabled")}
+                  ${metaRow("desktop", activeLeaseVNC ? "enabled" : "disabled")}
                   ${metaRow("expires", shortTime(activeLease.expiresAt))}
                 </dl>`
               : `<p class="detail-note">No active Crabbox lease is attached to this Dedicated Host. It is still usable as macOS capacity for a host-pinned run.</p>`
@@ -511,7 +514,7 @@ export function portalMacHostDetail(
           <span>${activeLease ? "copy locally" : "host pin"}</span>
         </div>
         <div class="bridge-grid">
-          ${bridgeRow("WebVNC", activeLease?.desktop === true, bridgeStatus?.webVNCBridgeConnected ?? false, bridgeStatus?.webVNCViewerConnected ?? false, vncAction)}
+          ${bridgeRow("WebVNC", activeLeaseVNC, bridgeStatus?.webVNCBridgeConnected ?? false, bridgeStatus?.webVNCViewerConnected ?? false, vncAction)}
           ${bridgeRow("code", activeLease?.code === true, bridgeStatus?.codeBridgeConnected ?? false, false, codeAction)}
         </div>
         <div id="access-commands" class="access-commands">${commands}</div>

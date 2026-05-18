@@ -4983,7 +4983,7 @@ function webVNCLeaseError(lease: LeaseRecord): string {
   if (lease.state !== "active") {
     return "lease is not active";
   }
-  if (!lease.desktop) {
+  if (!lease.desktop && lease.target !== "macos") {
     return "lease was not created with desktop=true";
   }
   if (!lease.host) {

@@ -1794,7 +1794,7 @@ describe("fleet lease identity and idle", () => {
     expect(vnc.headers.get("location")).toBe("/portal/leases/cbx_000000000099/vnc");
 
     const enablePage = await fleet.fetch(
-      request("GET", "/portal/hosts/aws/h-000000000002/vnc", {
+      request("GET", "/portal/hosts/aws/h-000000000002", {
         headers: {
           "x-crabbox-owner": "peter@example.com",
           "x-crabbox-org": "openclaw",
@@ -1803,8 +1803,19 @@ describe("fleet lease identity and idle", () => {
     );
     expect(enablePage.status).toBe(200);
     const enableBody = await enablePage.text();
-    expect(enableBody).toContain("enable VNC");
-    expect(enableBody).toContain("desktop</dt><dd>disabled");
+    expect(enableBody).toContain("open VNC");
+    expect(enableBody).toContain("desktop</dt><dd>enabled");
+
+    const macVNC = await fleet.fetch(
+      request("GET", "/portal/hosts/aws/h-000000000002/vnc", {
+        headers: {
+          "x-crabbox-owner": "peter@example.com",
+          "x-crabbox-org": "openclaw",
+        },
+      }),
+    );
+    expect(macVNC.status).toBe(303);
+    expect(macVNC.headers.get("location")).toBe("/portal/leases/cbx_000000000100/vnc");
 
     const enabled = await fleet.fetch(
       request("POST", "/portal/hosts/aws/h-000000000002/vnc", {
