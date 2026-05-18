@@ -113,6 +113,7 @@ test("AWS devtools mint wrapper runs linux source candidate and promoted proof",
     {
       CRABBOX_BIN: fake.fake,
       CRABBOX_FAKE_LOG: fake.log,
+      CRABBOX_IMAGE_WINDOWS_WARMUP_SETTLE_SECONDS: "0",
     },
   );
   assert.equal(result.code, 0, result.stderr);
@@ -150,6 +151,7 @@ test("AWS devtools mint wrapper maps windows flags", async () => {
     {
       CRABBOX_BIN: fake.fake,
       CRABBOX_FAKE_LOG: fake.log,
+      CRABBOX_IMAGE_WINDOWS_WARMUP_SETTLE_SECONDS: "0",
     },
   );
   assert.equal(result.code, 0, result.stderr);
@@ -159,6 +161,7 @@ test("AWS devtools mint wrapper maps windows flags", async () => {
   assert.doesNotMatch(log, /--desktop/);
   assert.doesNotMatch(log, /--browser/);
   assert.doesNotMatch(log, /warmup .*--region us-east-1/);
+  assert.match(log, /status --provider aws --target windows --id cbx_source --wait --wait-timeout 15m/);
   assert.match(log, /run --provider aws --target windows --id cbx_source --no-sync --shell -- New-Item/);
   assert.match(log, /run --provider aws --target windows --id cbx_source --no-sync --shell -- Add-Content/);
   assert.match(log, /FromBase64String/);
@@ -185,6 +188,7 @@ test("AWS devtools mint wrapper reboots windows source when prep requires it", a
       CRABBOX_FAKE_LOG: fake.log,
       CRABBOX_FAKE_WINDOWS_REBOOT: "1",
       CRABBOX_IMAGE_REBOOT_SETTLE_SECONDS: "0",
+      CRABBOX_IMAGE_WINDOWS_WARMUP_SETTLE_SECONDS: "0",
     },
   );
   assert.equal(result.code, 0, result.stderr);

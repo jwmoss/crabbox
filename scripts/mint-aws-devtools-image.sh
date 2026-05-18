@@ -13,6 +13,8 @@ idle_timeout="${CRABBOX_IMAGE_IDLE_TIMEOUT:-30m}"
 wait_timeout="${CRABBOX_IMAGE_WAIT_TIMEOUT:-60m}"
 reboot_wait_timeout="${CRABBOX_IMAGE_REBOOT_WAIT_TIMEOUT:-25m}"
 reboot_settle_seconds="${CRABBOX_IMAGE_REBOOT_SETTLE_SECONDS:-30}"
+windows_warmup_wait_timeout="${CRABBOX_IMAGE_WINDOWS_WARMUP_WAIT_TIMEOUT:-15m}"
+windows_warmup_settle_seconds="${CRABBOX_IMAGE_WINDOWS_WARMUP_SETTLE_SECONDS:-90}"
 run="${CRABBOX_IMAGE_RUN:-0}"
 promote="${CRABBOX_IMAGE_PROMOTE:-1}"
 keep_lease="${CRABBOX_IMAGE_KEEP_LEASE:-0}"
@@ -54,6 +56,8 @@ Useful env:
   CRABBOX_IMAGE_WAIT_TIMEOUT
   CRABBOX_IMAGE_REBOOT_WAIT_TIMEOUT
   CRABBOX_IMAGE_REBOOT_SETTLE_SECONDS
+  CRABBOX_IMAGE_WINDOWS_WARMUP_WAIT_TIMEOUT
+  CRABBOX_IMAGE_WINDOWS_WARMUP_SETTLE_SECONDS
 USAGE
 }
 
@@ -232,7 +236,13 @@ warmup() {
   else
     run_cmd "$CRABBOX_BIN" "${args[@]}" 2>&1 | tee "$log" >&2
   fi
-  lease_from_log "$log"
+  local lease
+  lease="$(lease_from_log "$log")"
+  if [[ "$target" == "windows" ]]; then
+    sleep "$windows_warmup_settle_seconds"
+    run_cmd "$CRABBOX_BIN" status --provider aws --target windows --id "$lease" --wait --wait-timeout "$windows_warmup_wait_timeout" >&2
+  fi
+  printf '%s\n' "$lease"
 }
 
 smoke_script() {
