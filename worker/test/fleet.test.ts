@@ -2759,6 +2759,8 @@ describe("fleet lease identity and idle", () => {
     expect(pageBody).toContain("clipboardPasteFrom");
     expect(pageBody).toContain("rfb.showDotCursor = true");
     expect(pageBody).toContain('target === "macos"');
+    expect(pageBody).toContain("rfb.compressionLevel = 1");
+    expect(pageBody).toContain("rfb.qualityLevel = 2");
     expect(pageBody).toContain("MetaLeft");
     expect(pageBody).toContain("ControlLeft");
     expect(pageBody).toContain("position:sticky");

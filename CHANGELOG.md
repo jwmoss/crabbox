@@ -20,7 +20,7 @@
 - Fixed AWS WebVNC reconnects so coordinator lease heartbeats refresh SSH ingress from the caller source before local bridge startup retries.
 - Fixed WebVNC daemon restarts so the background bridge keeps its lease claim after a repo checkout changes.
 - Fixed macOS WebVNC bridge churn by using a smaller bridge pool for macOS Screen Sharing instead of opening the default multi-slot VNC pool.
-- Fixed macOS WebVNC portal performance by using lower-bandwidth noVNC compression and quality defaults for Screen Sharing sessions.
+- Fixed macOS WebVNC portal performance by using latency-biased noVNC compression and quality defaults for Screen Sharing sessions.
 - Fixed WebVNC portal credential failures so bare or stale macOS links stop with a clear status instead of opening a blank retry loop.
 - Fixed WebVNC local bridge startup so resolved SSH fallback ports are reused for the foreground VNC tunnel instead of falling back during probes and then tunneling the stale configured port.
 - Fixed the portal so configured AWS macOS Dedicated Hosts appear as lease-like dedicated rows with host detail pages, attached-lease access actions, and local start/WebVNC commands for host-pinned desktop leases.

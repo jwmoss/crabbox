@@ -978,8 +978,8 @@ export function portalVNC(lease: LeaseRecord, options: { canManage?: boolean } =
           rfb.resizeSession = false;
           rfb.viewOnly = true;
           if (target === "macos") {
-            rfb.compressionLevel = 6;
-            rfb.qualityLevel = 4;
+            rfb.compressionLevel = 1;
+            rfb.qualityLevel = 2;
           }
           rfb.addEventListener("connect", () => {
             connected = true;
