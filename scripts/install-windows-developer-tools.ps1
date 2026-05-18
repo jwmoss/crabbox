@@ -80,6 +80,8 @@ function Install-DockerEngine {
   $restartRequired = $false
   $feature = Get-WindowsFeature -Name Containers -ErrorAction SilentlyContinue
   if ($feature -and -not $feature.Installed) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $RebootMarker) | Out-Null
+    Set-Content -Path $RebootMarker -Value "Containers feature installation may interrupt SSH and requires a reboot before Docker Engine installation"
     $result = Install-WindowsFeature -Name Containers
     $result | Out-Host
     if ($result.RestartNeeded -and $result.RestartNeeded -ne "No") {

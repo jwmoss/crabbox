@@ -54,6 +54,10 @@ case "$1" in
       printf 'reboot scheduled\\n'
       exit 0
     fi
+    if [[ "$*" == *"FromBase64String"* && "\${CRABBOX_FAKE_WINDOWS_PREP_DISCONNECT:-0}" == "1" && ! -f "\${CRABBOX_FAKE_LOG}.prep-disconnected" ]]; then
+      touch "\${CRABBOX_FAKE_LOG}.prep-disconnected"
+      exit 255
+    fi
     printf 'devtools-smoke-ok\\n'
     ;;
   image)
@@ -201,6 +205,39 @@ test("AWS devtools mint wrapper reboots windows source when prep requires it", a
   assert.match(log, /status --provider aws --target windows --id cbx_source --wait --wait-timeout 25m/);
   assert.match(log, /run --provider aws --target windows --id cbx_source --no-sync --shell -- Add-Content/);
   assert.match(log, /FromBase64String/);
+});
+
+test("AWS devtools mint wrapper recovers windows prep disconnects with reboot marker", async () => {
+  const fake = await setupFakeCrabbox();
+  const result = await runScript(
+    [
+      "--target",
+      "windows",
+      "--region",
+      "us-east-1",
+      "--type",
+      "m7i.large",
+      "--run",
+      "--no-promote",
+      "--prep-script",
+      fake.windowsPrep,
+    ],
+    {
+      CRABBOX_BIN: fake.fake,
+      CRABBOX_FAKE_LOG: fake.log,
+      CRABBOX_FAKE_WINDOWS_PREP_DISCONNECT: "1",
+      CRABBOX_FAKE_WINDOWS_REBOOT: "1",
+      CRABBOX_IMAGE_REBOOT_SETTLE_SECONDS: "0",
+      CRABBOX_IMAGE_WINDOWS_WARMUP_SETTLE_SECONDS: "0",
+    },
+  );
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stderr, /Windows prep command disconnected; checking whether a planned Docker reboot is pending/);
+  const log = await readFile(fake.log, "utf8");
+  assert.match(log, /status --provider aws --target windows --id cbx_source --wait --wait-timeout 25m/);
+  assert.match(log, /run --provider aws --target windows --id cbx_source --no-sync --shell -- if \(Test-Path/);
+  assert.match(log, /run --provider aws --target windows --id cbx_source --no-sync --shell -- shutdown \/r \/t 5 \/f/);
+  assert.match(log, /image create --id cbx_source --name crabbox-windows-devtools-/);
 });
 
 test("AWS devtools mint wrapper cleans up lease when warmup fails after allocation", async () => {

@@ -331,7 +331,12 @@ run_prep() {
       if ((offset + chunk_size >= ${#encoded})); then
         command+="$decode_and_run"
       fi
-      run_cmd "$CRABBOX_BIN" run --provider aws --target windows --id "$lease" --no-sync --shell -- "$command"
+      if ! run_cmd "$CRABBOX_BIN" run --provider aws --target windows --id "$lease" --no-sync --shell -- "$command"; then
+        if ((offset + chunk_size >= ${#encoded})) && recover_windows_prep_disconnect "$lease"; then
+          return 0
+        fi
+        return 1
+      fi
     done
     return
   fi
@@ -344,6 +349,19 @@ windows_reboot_required() {
   output="$("$CRABBOX_BIN" run --provider aws --target windows --id "$lease" --no-sync --shell -- "if (Test-Path '$windows_reboot_marker') { Write-Output 'crabbox-reboot-required' } else { Write-Output 'crabbox-reboot-not-required' }")"
   printf '%s\n' "$output"
   grep -q 'crabbox-reboot-required' <<<"$output"
+}
+
+recover_windows_prep_disconnect() {
+  local lease="$1"
+  printf 'Windows prep command disconnected; checking whether a planned Docker reboot is pending\n' >&2
+  if ! run_cmd "$CRABBOX_BIN" status --provider aws --target windows --id "$lease" --wait --wait-timeout "$reboot_wait_timeout" >&2; then
+    return 1
+  fi
+  if windows_reboot_required "$lease"; then
+    return 0
+  fi
+  printf 'Windows prep command failed and no reboot marker was found\n' >&2
+  return 1
 }
 
 reboot_windows_source_if_needed() {
