@@ -331,17 +331,18 @@ POWERSHELL
 
 wait_windows_prep_task() {
   local lease="$1"
-  local status_command output status deadline
+  local status_command output normalized status deadline
   status_command="$(windows_prep_status_command)"
   deadline=$((SECONDS + $(duration_seconds "$prep_wait_timeout")))
   while true; do
     status=0
     output="$("$CRABBOX_BIN" run --provider aws --target windows --id "$lease" --no-sync --shell -- "$status_command" 2>&1)" || status=$?
     printf '%s\n' "$output" >&2
-    if grep -qx 'crabbox-prep-done' <<<"$output"; then
+    normalized="${output//$'\r'/}"
+    if grep -qx 'crabbox-prep-done' <<<"$normalized"; then
       return 0
     fi
-    if grep -qx 'crabbox-prep-failed' <<<"$output"; then
+    if grep -qx 'crabbox-prep-failed' <<<"$normalized"; then
       return 1
     fi
     if ((SECONDS >= deadline)); then
