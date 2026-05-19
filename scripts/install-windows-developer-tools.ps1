@@ -41,6 +41,21 @@ function Add-MachinePath {
   }
 }
 
+function Refresh-SessionPath {
+  $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $paths = @($machinePath, $userPath) | Where-Object { $_ }
+  if ($paths.Count -gt 0) {
+    $env:Path = ($paths -join ";")
+  }
+  Add-MachinePath "C:\ProgramData\chocolatey\bin"
+  Add-MachinePath "C:\Program Files\Git\cmd"
+  Add-MachinePath "C:\Python313"
+  Add-MachinePath "C:\Python313\Scripts"
+  Add-MachinePath "C:\Program Files\nodejs"
+  Add-MachinePath "C:\ProgramData\crabbox\pnpm"
+}
+
 function Install-Chocolatey {
   if (Get-Command choco.exe -ErrorAction SilentlyContinue) { return }
   Write-Log "installing Chocolatey"
@@ -165,11 +180,19 @@ Install-ChocoPackage @(
   "openssh",
   "vcredist-all"
 )
+Refresh-SessionPath
 Install-Node
+Refresh-SessionPath
 Enable-CorepackPnpm
 Install-DockerEngine
 Prepare-Caches
 Disable-FirstBootNoise
+Refresh-SessionPath
+
+if (Test-Path $RebootMarker) {
+  Write-Log "reboot required before final verification"
+  exit 0
+}
 
 Write-Log "versions"
 Get-ComputerInfo | Select-Object OsName, OsVersion, OsBuildNumber | Format-List

@@ -379,14 +379,17 @@ windows_reboot_required() {
 
 recover_windows_prep_disconnect() {
   local lease="$1"
-  printf 'Windows prep command disconnected; checking whether a planned Docker reboot is pending\n' >&2
-  if ! wait_windows_ssh_probe "$lease" "$reboot_wait_timeout"; then
-    return 1
-  fi
-  if windows_reboot_required "$lease"; then
-    return 0
-  fi
-  printf 'Windows prep command failed and no reboot marker was found\n' >&2
+  printf 'Windows prep command failed or disconnected; checking whether a planned Docker reboot is pending\n' >&2
+  for _ in 1 2 3; do
+    if ! wait_windows_ssh_probe "$lease" "$reboot_wait_timeout"; then
+      return 1
+    fi
+    if windows_reboot_required "$lease"; then
+      return 0
+    fi
+    sleep 30
+  done
+  printf 'Windows prep command failed or disconnected and no reboot marker was found\n' >&2
   return 1
 }
 

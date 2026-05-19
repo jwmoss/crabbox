@@ -232,7 +232,7 @@ test("AWS devtools mint wrapper recovers windows prep disconnects with reboot ma
     },
   );
   assert.equal(result.code, 0, result.stderr);
-  assert.match(result.stderr, /Windows prep command disconnected; checking whether a planned Docker reboot is pending/);
+  assert.match(result.stderr, /Windows prep command failed or disconnected; checking whether a planned Docker reboot is pending/);
   const log = await readFile(fake.log, "utf8");
   assert.match(log, /run --provider aws --target windows --id cbx_source --no-sync --shell -- Write-Output "windows-ssh-ready"/);
   assert.match(log, /run --provider aws --target windows --id cbx_source --no-sync --shell -- if \(Test-Path/);
