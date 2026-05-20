@@ -324,6 +324,15 @@ railway:
   apiUrl: https://railway.example.test/graphql/v2
   projectId: project-file
   environmentId: environment-file
+runpod:
+  apiUrl: https://runpod.example.test/v1
+  cloudType: SECURE
+  instanceId: NVIDIA L4
+  image: runpod/pytorch:custom
+  templateId: tpl-file
+  diskGB: 25
+  user: runpod-user
+  workRoot: /workspaces/runpod-test
 islo:
   baseUrl: https://islo.example.test
   image: docker.io/library/ubuntu:24.04
@@ -482,6 +491,9 @@ ssh:
 	}
 	if cfg.Railway.APIURL != "https://railway.example.test/graphql/v2" || cfg.Railway.ProjectID != "project-file" || cfg.Railway.EnvironmentID != "environment-file" {
 		t.Fatalf("railway config not loaded: %#v", cfg.Railway)
+	}
+	if cfg.Runpod.APIURL != "https://runpod.example.test/v1" || cfg.Runpod.CloudType != "SECURE" || cfg.Runpod.InstanceID != "NVIDIA L4" || cfg.Runpod.Image != "runpod/pytorch:custom" || cfg.Runpod.TemplateID != "tpl-file" || cfg.Runpod.DiskGB != 25 || cfg.Runpod.User != "runpod-user" || cfg.Runpod.WorkRoot != "/workspaces/runpod-test" {
+		t.Fatalf("runpod config not loaded: %#v", cfg.Runpod)
 	}
 	if cfg.Islo.BaseURL != "https://islo.example.test" || cfg.Islo.Image != "docker.io/library/ubuntu:24.04" || cfg.Islo.Workdir != "crabbox" || cfg.Islo.GatewayProfile != "default" || cfg.Islo.SnapshotName != "snap-ready" || cfg.Islo.VCPUs != 4 || cfg.Islo.MemoryMB != 8192 || cfg.Islo.DiskGB != 40 {
 		t.Fatalf("islo config not loaded: %#v", cfg.Islo)
@@ -668,6 +680,21 @@ func TestEnvOverridesConfig(t *testing.T) {
 	t.Setenv("CRABBOX_RAILWAY_PROJECT_ID", "railway-project-env")
 	t.Setenv("RAILWAY_ENVIRONMENT_ID", "railway-environment-file")
 	t.Setenv("CRABBOX_RAILWAY_ENVIRONMENT_ID", "railway-environment-env")
+	t.Setenv("RUNPOD_API_KEY", "runpod-key-file")
+	t.Setenv("CRABBOX_RUNPOD_API_KEY", "runpod-key-env")
+	t.Setenv("RUNPOD_API_URL", "https://runpod-file.example/v1")
+	t.Setenv("CRABBOX_RUNPOD_API_URL", "https://runpod-env.example/v1")
+	t.Setenv("RUNPOD_CLOUD_TYPE", "COMMUNITY")
+	t.Setenv("CRABBOX_RUNPOD_CLOUD_TYPE", "SECURE")
+	t.Setenv("RUNPOD_INSTANCE_ID", "NVIDIA RTX A4000")
+	t.Setenv("CRABBOX_RUNPOD_INSTANCE_ID", "NVIDIA L4")
+	t.Setenv("RUNPOD_IMAGE", "runpod/pytorch:file")
+	t.Setenv("CRABBOX_RUNPOD_IMAGE", "runpod/pytorch:env")
+	t.Setenv("RUNPOD_TEMPLATE_ID", "tpl-file")
+	t.Setenv("CRABBOX_RUNPOD_TEMPLATE_ID", "tpl-env")
+	t.Setenv("CRABBOX_RUNPOD_DISK_GB", "30")
+	t.Setenv("CRABBOX_RUNPOD_USER", "runpod-env-user")
+	t.Setenv("CRABBOX_RUNPOD_WORK_ROOT", "/work/runpod-env")
 	t.Setenv("ISLO_API_KEY", "islo-api-file")
 	t.Setenv("CRABBOX_ISLO_API_KEY", "islo-api-env")
 	t.Setenv("ISLO_BASE_URL", "https://islo-file.example")
@@ -823,6 +850,9 @@ func TestEnvOverridesConfig(t *testing.T) {
 	}
 	if cfg.Railway.APIToken != "railway-token-env" || cfg.Railway.APIURL != "https://railway-env.example/graphql/v2" || cfg.Railway.ProjectID != "railway-project-env" || cfg.Railway.EnvironmentID != "railway-environment-env" {
 		t.Fatalf("unexpected railway env: %#v", cfg.Railway)
+	}
+	if cfg.Runpod.APIKey != "runpod-key-env" || cfg.Runpod.APIURL != "https://runpod-env.example/v1" || cfg.Runpod.CloudType != "SECURE" || cfg.Runpod.InstanceID != "NVIDIA L4" || cfg.Runpod.Image != "runpod/pytorch:env" || cfg.Runpod.TemplateID != "tpl-env" || cfg.Runpod.DiskGB != 30 || cfg.Runpod.User != "runpod-env-user" || cfg.Runpod.WorkRoot != "/work/runpod-env" {
+		t.Fatalf("unexpected runpod env: %#v", cfg.Runpod)
 	}
 	if cfg.Islo.APIKey != "islo-api-env" || cfg.Islo.BaseURL != "https://islo-env.example" || cfg.Islo.Image != "ubuntu:env" || cfg.Islo.Workdir != "env-workdir" || cfg.Islo.GatewayProfile != "env-gateway" || cfg.Islo.SnapshotName != "env-snapshot" || cfg.Islo.VCPUs != 8 || cfg.Islo.MemoryMB != 16384 || cfg.Islo.DiskGB != 80 {
 		t.Fatalf("unexpected islo env: %#v", cfg.Islo)
@@ -1127,6 +1157,45 @@ func TestConfigHelperBranches(t *testing.T) {
 	}
 }
 
+func TestConfigHelperErrorBranches(t *testing.T) {
+	t.Run("unavailable user config dir", func(t *testing.T) {
+		t.Setenv("CRABBOX_CONFIG", "")
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", "")
+		if _, err := writeUserFileConfig(fileConfig{Profile: "missing-home"}); err == nil {
+			t.Fatal("expected unavailable user config dir error")
+		}
+	})
+
+	t.Run("config parent is file", func(t *testing.T) {
+		parent := filepath.Join(t.TempDir(), "not-dir")
+		if err := os.WriteFile(parent, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("CRABBOX_CONFIG", filepath.Join(parent, "config.yaml"))
+		if _, err := writeUserFileConfig(fileConfig{Profile: "mkdir-fails"}); err == nil {
+			t.Fatal("expected config directory create error")
+		}
+	})
+
+	t.Run("config path is directory", func(t *testing.T) {
+		path := t.TempDir()
+		t.Setenv("CRABBOX_CONFIG", path)
+		if _, err := writeUserFileConfig(fileConfig{Profile: "write-fails"}); err == nil {
+			t.Fatal("expected config write error")
+		}
+	})
+}
+
+func TestWindowsWSLWorkRoot(t *testing.T) {
+	if got := windowsWSLWorkRoot(Config{}); got != defaultPOSIXWorkRoot {
+		t.Fatalf("windowsWSLWorkRoot default=%q want %q", got, defaultPOSIXWorkRoot)
+	}
+	if got := windowsWSLWorkRoot(Config{WorkRoot: "/work/custom"}); got != "/work/custom" {
+		t.Fatalf("windowsWSLWorkRoot custom=%q", got)
+	}
+}
+
 func TestEnvHelperBranches(t *testing.T) {
 	t.Setenv("CRABBOX_INT", "42")
 	t.Setenv("CRABBOX_BAD_INT", "oops")
@@ -1146,6 +1215,17 @@ func TestEnvHelperBranches(t *testing.T) {
 	}
 	if got := getenvInt32("CRABBOX_INT32_OVERFLOW", 7); got != 7 {
 		t.Fatalf("overflow int32 fallback=%d", got)
+	}
+	t.Setenv("CRABBOX_FLOAT", "1.5")
+	t.Setenv("CRABBOX_BAD_FLOAT", "oops")
+	if got := getenvFloat("CRABBOX_FLOAT", 7); got != 1.5 {
+		t.Fatalf("float=%f", got)
+	}
+	if got := getenvFloat("CRABBOX_BAD_FLOAT", 7); got != 7 {
+		t.Fatalf("bad float fallback=%f", got)
+	}
+	if got := getenvFloat("CRABBOX_MISSING_FLOAT", 7); got != 7 {
+		t.Fatalf("missing float fallback=%f", got)
 	}
 
 	for _, tc := range []struct {
@@ -1175,6 +1255,16 @@ func TestEnvHelperBranches(t *testing.T) {
 	t.Setenv("CRABBOX_LIST", "CI,NODE_OPTIONS")
 	if list, ok := getenvList("CRABBOX_LIST"); !ok || len(list) != 2 || list[1] != "NODE_OPTIONS" {
 		t.Fatalf("getenvList=%v ok=%t", list, ok)
+	}
+}
+
+func TestFileProfileEnvConfigUnmarshalRejectsNonMapping(t *testing.T) {
+	var cfg struct {
+		Env fileProfileEnvConfig `yaml:"env"`
+	}
+	err := yaml.Unmarshal([]byte("env: []\n"), &cfg)
+	if err == nil || !strings.Contains(err.Error(), "profile env must be a mapping") {
+		t.Fatalf("err=%v", err)
 	}
 }
 
@@ -1232,6 +1322,97 @@ func TestNamespaceDevboxSizeForConfig(t *testing.T) {
 				t.Fatalf("size=%q want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestConfigServerTypeHelperBranches(t *testing.T) {
+	if got := proxmoxServerTypeForConfig(Config{}); got != "template" {
+		t.Fatalf("proxmox default=%q", got)
+	}
+	if got := proxmoxServerTypeForConfig(Config{Proxmox: ProxmoxConfig{TemplateID: 9000}}); got != "template-9000" {
+		t.Fatalf("proxmox template=%q", got)
+	}
+	for _, tc := range []struct {
+		class string
+		want  string
+	}{
+		{class: "standard", want: "S"},
+		{class: "fast", want: "M"},
+		{class: "beast", want: "XL"},
+	} {
+		if got := namespaceDevboxSizeForClass(tc.class); got != tc.want {
+			t.Fatalf("namespaceDevboxSizeForClass(%q)=%q want %q", tc.class, got, tc.want)
+		}
+	}
+}
+
+func TestApplyFileConfigCloudProviderBranches(t *testing.T) {
+	enabled := true
+	disabled := false
+	cfg := Config{}
+	applyFileConfig(&cfg, fileConfig{
+		TargetOS:         targetLinux,
+		Desktop:          &enabled,
+		Browser:          &disabled,
+		Code:             &enabled,
+		ServerType:       "custom-type",
+		CoordinatorToken: "coord-token",
+		HostID:           "",
+		Broker: &fileBrokerConfig{
+			Provider: "aws",
+			Access:   &fileAccessConfig{ClientID: "access-id", ClientSecret: "access-secret", Token: "access-token"},
+		},
+		Hetzner: &fileHetznerConfig{Location: "fsn1", Image: "ubuntu-24.04", SSHKey: "hetzner-key"},
+		AWS: &fileAWSConfig{
+			Region:          "eu-central-1",
+			AMI:             "ami-test",
+			SecurityGroupID: "sg-test",
+			SubnetID:        "subnet-test",
+			InstanceProfile: "profile-test",
+			RootGB:          123,
+			SSHCIDRs:        []string{"198.51.100.1/32"},
+			MacHostID:       "h-mac",
+		},
+		Azure: &fileAzureConfig{
+			SubscriptionID: "sub",
+			TenantID:       "tenant",
+			ClientID:       "client",
+			Location:       "westeurope",
+			ResourceGroup:  "rg",
+			Image:          "ubuntu",
+			OSDisk:         "ephemeral",
+			VNet:           "vnet",
+			Subnet:         "subnet",
+			NSG:            "nsg",
+			SSHCIDRs:       []string{"198.51.100.2/32"},
+			Network:        "public",
+		},
+		GCP: &fileGCPConfig{
+			Project:        "project",
+			Zone:           "europe-west1-b",
+			Image:          "ubuntu",
+			Network:        "net",
+			Subnet:         "subnet",
+			Tags:           []string{"crabbox"},
+			SSHCIDRs:       []string{"198.51.100.3/32"},
+			RootGB:         456,
+			ServiceAccount: "runner@example.iam.gserviceaccount.com",
+		},
+	})
+	if !cfg.Desktop || cfg.Browser || !cfg.Code || cfg.TargetOS != targetLinux || cfg.ServerType != "custom-type" {
+		t.Fatalf("top-level config not applied: %#v", cfg)
+	}
+	if cfg.Provider != "aws" || cfg.Access.ClientID != "access-id" || cfg.CoordToken != "coord-token" {
+		t.Fatalf("broker/access config not applied: provider=%s access=%#v token=%s", cfg.Provider, cfg.Access, cfg.CoordToken)
+	}
+	if cfg.Location != "fsn1" || cfg.ProviderKey != "hetzner-key" || cfg.HostID != "h-mac" || cfg.AWSRootGB != 123 {
+		t.Fatalf("hetzner/aws config not applied: location=%s key=%s host=%s root=%d", cfg.Location, cfg.ProviderKey, cfg.HostID, cfg.AWSRootGB)
+	}
+	if cfg.AzureOSDisk != "ephemeral" || !cfg.AzureOSDiskExplicit || cfg.AzureNetwork != "public" {
+		t.Fatalf("azure config not applied: %#v", cfg)
+	}
+	if cfg.GCPProject != "project" || !cfg.gcpProjectExplicit || cfg.GCPRootGB != 456 || cfg.GCPServiceAccount == "" {
+		t.Fatalf("gcp config not applied: %#v", cfg)
 	}
 }
 
