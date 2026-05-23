@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added `provider: upstash-box` for delegated Upstash Box sandbox runs through the Box REST API, including archive sync, `run`, `warmup`, `list`, `status`, `stop`, config/env overrides, and provider docs.
+
 ### Fixed
 
 - Fixed portal and documentation theme toggles so dark mode shows only the sun icon and light mode shows only the moon icon.
