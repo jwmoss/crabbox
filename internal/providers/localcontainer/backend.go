@@ -971,7 +971,7 @@ need_install=0
 	fi
 if [ "${CRABBOX_DESKTOP:-0}" = "1" ] && command -v apt-get >/dev/null 2>&1; then
   apt-get update
-  apt-get install -y --no-install-recommends xvfb xfce4-session xfwm4 xfce4-panel xfdesktop4 xfce4-terminal xfconf xfce4-settings x11vnc xauth dbus-x11 x11-xserver-utils xterm scrot ffmpeg xdotool wmctrl xclip xsel fonts-dejavu-core fonts-liberation iproute2 openssl procps netcat-openbsd novnc websockify
+  apt-get install -y --no-install-recommends xvfb xfce4-session xfwm4 xfce4-panel xfdesktop4 xfce4-terminal xfconf xfce4-settings x11vnc xauth dbus-x11 x11-xserver-utils xterm scrot ffmpeg xdotool wmctrl xclip xsel fonts-dejavu-core fonts-liberation iproute2 openssl arc-theme procps netcat-openbsd novnc websockify
 fi
 if [ "${CRABBOX_BROWSER:-0}" = "1" ] && command -v apt-get >/dev/null 2>&1; then
   apt-get update
@@ -1070,14 +1070,14 @@ if [ "${CRABBOX_DESKTOP:-0}" = "1" ]; then
   chmod 0600 /var/lib/crabbox/vnc.password /var/lib/crabbox/vnc.pass
   config_dir="$home_dir/.config"
   gtk_theme=Adwaita-dark
-  for candidate in Greybird-dark Adwaita-dark Greybird; do
+  for candidate in Arc-Dark Greybird-dark Adwaita-dark Greybird; do
     if [ -d "/usr/share/themes/$candidate/gtk-3.0" ]; then
       gtk_theme="$candidate"
       break
     fi
   done
   xfwm_theme=Default
-  for candidate in Greybird-dark Daloa Greybird Default; do
+  for candidate in Arc-Dark Greybird-dark Daloa Default; do
     if [ -d "/usr/share/themes/$candidate/xfwm4" ]; then
       xfwm_theme="$candidate"
       break
@@ -1119,18 +1119,6 @@ gtk-theme-name=$gtk_theme
 gtk-icon-theme-name=Adwaita
 gtk-application-prefer-dark-theme=1
 EOF
-  cat > "$config_dir/gtk-3.0/gtk.css" <<'EOF'
-.xfce4-panel,
-.xfce4-panel .background {
-  background-color: #0f1117;
-  color: #e5e7eb;
-}
-.xfce4-panel button,
-.xfce4-panel button.flat {
-  background-color: transparent;
-  color: #e5e7eb;
-}
-EOF
   cat > "$home_dir/.gtkrc-2.0" <<EOF
 gtk-theme-name="$gtk_theme"
 gtk-icon-theme-name="Adwaita"
@@ -1143,14 +1131,14 @@ set -eu
 user="${CRABBOX_SSH_USER:-crabbox}"
 runtime="/tmp/crabbox-runtime-$user"
 gtk_theme=Adwaita-dark
-for candidate in Greybird-dark Adwaita-dark Greybird; do
+for candidate in Arc-Dark Greybird-dark Adwaita-dark Greybird; do
   if [ -d "/usr/share/themes/$candidate/gtk-3.0" ]; then
     gtk_theme="$candidate"
     break
   fi
 done
 xfwm_theme=Default
-for candidate in Greybird-dark Daloa Greybird Default; do
+for candidate in Arc-Dark Greybird-dark Daloa Default; do
   if [ -d "/usr/share/themes/$candidate/xfwm4" ]; then
     xfwm_theme="$candidate"
     break
@@ -1170,10 +1158,7 @@ if command -v xfconf-query >/dev/null 2>&1; then
   su "$user" -s /bin/sh -c "DISPLAY=:99 XDG_RUNTIME_DIR='$runtime' xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s Adwaita >/dev/null 2>&1 || true"
   su "$user" -s /bin/sh -c "DISPLAY=:99 XDG_RUNTIME_DIR='$runtime' xfconf-query -c xsettings -p /Gtk/ApplicationPreferDarkTheme -n -t bool -s true >/dev/null 2>&1 || true"
   su "$user" -s /bin/sh -c "DISPLAY=:99 XDG_RUNTIME_DIR='$runtime' xfconf-query -c xfwm4 -p /general/theme -n -t string -s '$xfwm_theme' >/dev/null 2>&1 || true"
-  for panel in $(su "$user" -s /bin/sh -c "DISPLAY=:99 XDG_RUNTIME_DIR='$runtime' xfconf-query -c xfce4-panel -l 2>/dev/null" | sed -n -e 's#^/panels/panel-\([0-9][0-9]*\)$#\1#p' -e 's#^/panels/panel-\([0-9][0-9]*\)/.*#\1#p' | sort -u); do
-    su "$user" -s /bin/sh -c "DISPLAY=:99 XDG_RUNTIME_DIR='$runtime' xfconf-query -c xfce4-panel -p /panels/panel-$panel/background-style -n -t int -s 1 >/dev/null 2>&1 || true"
-    su "$user" -s /bin/sh -c "DISPLAY=:99 XDG_RUNTIME_DIR='$runtime' xfconf-query -c xfce4-panel -p /panels/panel-$panel/background-rgba -n -t double -t double -t double -t double -s 0.06 -s 0.07 -s 0.09 -s 1.0 >/dev/null 2>&1 || true"
-  done
+  su "$user" -s /bin/sh -c "DISPLAY=:99 XDG_RUNTIME_DIR='$runtime' xfconf-query -c xfce4-panel -p /panels/dark-mode -n -t bool -s true >/dev/null 2>&1 || true"
   su "$user" -s /bin/sh -c "DISPLAY=:99 XDG_RUNTIME_DIR='$runtime' pkill -USR1 -x xfce4-panel >/dev/null 2>&1 || true"
   su "$user" -s /bin/sh -c "DISPLAY=:99 XDG_RUNTIME_DIR='$runtime' xfwm4 --replace >/tmp/crabbox-xfwm4-replace.log 2>&1 &"
 fi

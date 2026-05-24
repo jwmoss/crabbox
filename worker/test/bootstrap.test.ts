@@ -85,6 +85,7 @@ describe("cloud-init bootstrap", () => {
     const got = cloudInit({ ...config, desktop: true });
     expect(got).toContain("xvfb xfce4-session xfwm4 xfce4-panel xfdesktop4 xfce4-terminal");
     expect(got).toContain("xfconf xfce4-settings x11vnc xauth dbus-x11");
+    expect(got).toContain("arc-theme");
     expect(got).toContain("/etc/systemd/system/crabbox-xvfb.service");
     expect(got).toContain("/usr/local/bin/crabbox-configure-desktop-theme");
     expect(got).toContain("/etc/systemd/system/crabbox-desktop.service");
@@ -95,9 +96,9 @@ describe("cloud-init bootstrap", () => {
     expect(got).toContain("systemctl is-active --quiet crabbox-desktop.service");
     expect(got).toContain("systemctl is-active --quiet crabbox-desktop-session.service");
     expect(got).toContain("gtk_theme=Adwaita-dark");
-    expect(got).toContain("for candidate in Greybird-dark Adwaita-dark Greybird");
+    expect(got).toContain("for candidate in Arc-Dark Greybird-dark Adwaita-dark Greybird");
     expect(got).toContain("xfwm_theme=Default");
-    expect(got).toContain("for candidate in Greybird-dark Daloa Greybird Default");
+    expect(got).toContain("for candidate in Arc-Dark Greybird-dark Daloa Default");
     expect(got).toContain('ThemeName" type="string" value="$gtk_theme');
     expect(got).toContain("$config_dir/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml");
     expect(got).toContain(
@@ -105,14 +106,10 @@ describe("cloud-init bootstrap", () => {
     );
     expect(got).toContain('theme" type="string" value="$xfwm_theme');
     expect(got).toContain("gtk-application-prefer-dark-theme=1");
-    expect(got).toContain("$config_dir/gtk-3.0/gtk.css");
-    expect(got).toContain(".xfce4-panel");
     expect(got).toContain('mkdir -p "$config_dir/xfce4/xfconf/xfce-perchannel-xml"');
     expect(got).toContain("xfconf-query -c xsettings -p /Gtk/ApplicationPreferDarkTheme");
     expect(got).toContain("xfconf-query -c xfwm4 -p /general/theme");
-    expect(got).toContain("xfconf-query -c xfce4-panel -l");
-    expect(got).toContain(String.raw`s#^/panels/panel-\([0-9][0-9]*\)/.*#\1#p`);
-    expect(got).toContain("background-rgba");
+    expect(got).toContain("xfconf-query -c xfce4-panel -p /panels/dark-mode");
     expect(got).toContain("pkill -USR1 -x xfce4-panel");
     expect(got).toContain("xfwm4 --replace");
     expect(got).toContain("gsettings set org.gnome.desktop.interface color-scheme prefer-dark");

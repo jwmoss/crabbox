@@ -631,14 +631,14 @@ function optionalWriteFiles(config: LeaseConfig): string {
       fi
       config_dir="$home_dir/.config"
       gtk_theme=Adwaita-dark
-      for candidate in Greybird-dark Adwaita-dark Greybird; do
+      for candidate in Arc-Dark Greybird-dark Adwaita-dark Greybird; do
         if [ -d "/usr/share/themes/$candidate/gtk-3.0" ]; then
           gtk_theme="$candidate"
           break
         fi
       done
       xfwm_theme=Default
-      for candidate in Greybird-dark Daloa Greybird Default; do
+      for candidate in Arc-Dark Greybird-dark Daloa Default; do
         if [ -d "/usr/share/themes/$candidate/xfwm4" ]; then
           xfwm_theme="$candidate"
           break
@@ -685,18 +685,6 @@ function optionalWriteFiles(config: LeaseConfig): string {
       gtk-icon-theme-name=Adwaita
       gtk-application-prefer-dark-theme=1
       EOF
-      cat > "$config_dir/gtk-3.0/gtk.css" <<'EOF'
-      .xfce4-panel,
-      .xfce4-panel .background {
-        background-color: #0f1117;
-        color: #e5e7eb;
-      }
-      .xfce4-panel button,
-      .xfce4-panel button.flat {
-        background-color: transparent;
-        color: #e5e7eb;
-      }
-      EOF
       cat > "$home_dir/.gtkrc-2.0" <<EOF
       gtk-theme-name="$gtk_theme"
       gtk-icon-theme-name="Adwaita"
@@ -710,10 +698,7 @@ function optionalWriteFiles(config: LeaseConfig): string {
         xfconf-query -c xsettings -p /Net/IconThemeName -n -t string -s Adwaita >/dev/null 2>&1 || true
         xfconf-query -c xsettings -p /Gtk/ApplicationPreferDarkTheme -n -t bool -s true >/dev/null 2>&1 || true
         xfconf-query -c xfwm4 -p /general/theme -n -t string -s "$xfwm_theme" >/dev/null 2>&1 || true
-        for panel in $(xfconf-query -c xfce4-panel -l 2>/dev/null | sed -n -e 's#^/panels/panel-\\([0-9][0-9]*\\)$#\\1#p' -e 's#^/panels/panel-\\([0-9][0-9]*\\)/.*#\\1#p' | sort -u); do
-          xfconf-query -c xfce4-panel -p "/panels/panel-$panel/background-style" -n -t int -s 1 >/dev/null 2>&1 || true
-          xfconf-query -c xfce4-panel -p "/panels/panel-$panel/background-rgba" -n -t double -t double -t double -t double -s 0.06 -s 0.07 -s 0.09 -s 1.0 >/dev/null 2>&1 || true
-        done
+        xfconf-query -c xfce4-panel -p /panels/dark-mode -n -t bool -s true >/dev/null 2>&1 || true
         pkill -USR1 -x xfce4-panel >/dev/null 2>&1 || true
         xfwm4 --replace >/tmp/crabbox-xfwm4-replace.log 2>&1 &
       fi
@@ -793,7 +778,7 @@ function optionalBootstrap(config: LeaseConfig): string {
     parts.push(tailscaleBootstrap(config));
   }
   if (config.desktop) {
-    parts.push(`    retry apt-get install -y --no-install-recommends xvfb xfce4-session xfwm4 xfce4-panel xfdesktop4 xfce4-terminal xfconf xfce4-settings x11vnc xauth dbus-x11 x11-xserver-utils xterm scrot ffmpeg xdotool wmctrl xclip xsel fonts-dejavu-core fonts-liberation iproute2 openssl
+    parts.push(`    retry apt-get install -y --no-install-recommends xvfb xfce4-session xfwm4 xfce4-panel xfdesktop4 xfce4-terminal xfconf xfce4-settings x11vnc xauth dbus-x11 x11-xserver-utils xterm scrot ffmpeg xdotool wmctrl xclip xsel fonts-dejavu-core fonts-liberation iproute2 openssl arc-theme
     install -d -m 0750 -o crabbox -g crabbox /var/lib/crabbox
     if [ ! -s /var/lib/crabbox/vnc.password ]; then
       (umask 077 && openssl rand -base64 18 > /var/lib/crabbox/vnc.password)
