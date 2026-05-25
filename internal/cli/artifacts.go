@@ -19,6 +19,7 @@ type artifactFile struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	URL  string `json:"url,omitempty"`
+	Key  string `json:"key,omitempty"`
 }
 
 type artifactBundleMetadata struct {
@@ -71,6 +72,7 @@ type artifactPublishOptions struct {
 	Expires     time.Duration
 	DryRun      bool
 	NoComment   bool
+	NoManifest  bool
 }
 
 func (a App) artifactsCollect(ctx context.Context, args []string) error {
@@ -451,7 +453,7 @@ func (a App) artifactsPublish(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	published, bodyPath, err := a.publishArtifactDirectory(ctx, opts)
+	published, bodyPath, manifestPath, err := a.publishArtifactDirectory(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -463,21 +465,80 @@ func (a App) artifactsPublish(ctx context.Context, args []string) error {
 		}
 	}
 	fmt.Fprintf(a.Stdout, "markdown: %s\n", bodyPath)
+	if manifestPath != "" {
+		fmt.Fprintf(a.Stdout, "manifest: %s\n", manifestPath)
+	}
 	return nil
 }
 
-func (a App) publishArtifactDirectory(ctx context.Context, opts artifactPublishOptions) ([]artifactFile, string, error) {
+func (a App) artifactsList(ctx context.Context, args []string) error {
+	fs := newFlagSet("artifacts list", a.Stderr)
+	jsonOut := fs.Bool("json", false, "print JSON")
+	if err := parseInterspersedFlags(fs, args); err != nil {
+		return err
+	}
+	ref := ""
+	if fs.NArg() > 0 {
+		ref = fs.Arg(0)
+	}
+	manifest, path, err := readArtifactManifestRef(ctx, ref)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return json.NewEncoder(a.Stdout).Encode(manifest)
+	}
+	if path != "" {
+		fmt.Fprintf(a.Stdout, "manifest: %s\n", path)
+	}
+	for _, file := range manifest.Files {
+		location := firstNonBlank(file.URL, file.Path, file.Name)
+		fmt.Fprintf(a.Stdout, "%s name=%s size=%d sha256=%s content_type=%s access=%s url=%s\n",
+			file.Kind, file.Name, file.Size, blank(file.SHA256, "-"), blank(file.ContentType, "-"), blank(file.AccessPolicy, "-"), location)
+	}
+	return nil
+}
+
+func (a App) artifactsPull(ctx context.Context, args []string) error {
+	fs := newFlagSet("artifacts pull", a.Stderr)
+	output := fs.String("output", "", "output directory")
+	overwrite := fs.Bool("overwrite", false, "replace existing files")
+	jsonOut := fs.Bool("json", false, "print JSON")
+	if err := parseInterspersedFlags(fs, args); err != nil {
+		return err
+	}
+	ref := ""
+	if fs.NArg() > 0 {
+		ref = fs.Arg(0)
+	}
+	if *output == "" {
+		return exit(2, "artifacts pull requires --output")
+	}
+	result, err := pullArtifactManifest(ctx, ref, *output, *overwrite)
+	if err != nil {
+		return err
+	}
+	if *jsonOut {
+		return json.NewEncoder(a.Stdout).Encode(result)
+	}
+	for _, file := range result.Files {
+		fmt.Fprintf(a.Stdout, "pulled: %s bytes=%d sha256=%s\n", file.Path, file.Size, blank(file.SHA256, "-"))
+	}
+	return nil
+}
+
+func (a App) publishArtifactDirectory(ctx context.Context, opts artifactPublishOptions) ([]artifactFile, string, string, error) {
 	var err error
 	var coord *CoordinatorClient
 	if opts.Storage == "auto" || opts.Storage == "broker" {
 		cfg, cfgErr := loadConfig()
 		if cfgErr != nil {
-			return nil, "", cfgErr
+			return nil, "", "", cfgErr
 		}
 		var useCoordinator bool
 		coord, useCoordinator, err = newCoordinatorClient(cfg)
 		if err != nil {
-			return nil, "", err
+			return nil, "", "", err
 		}
 		if opts.Storage == "auto" {
 			if useCoordinator && coord != nil && coord.Token != "" {
@@ -490,14 +551,14 @@ func (a App) publishArtifactDirectory(ctx context.Context, opts artifactPublishO
 	ensureArtifactPublishPrefix(&opts)
 	files, err := listArtifactBundleFiles(opts.Directory)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	if len(files) == 0 {
-		return nil, "", exit(2, "artifact directory has no files: %s", opts.Directory)
+		return nil, "", "", exit(2, "artifact directory has no files: %s", opts.Directory)
 	}
 	summary, err := summaryText(opts.Summary, opts.SummaryFile)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	var published []artifactFile
 	if opts.Storage == "broker" {
@@ -506,24 +567,42 @@ func (a App) publishArtifactDirectory(ctx context.Context, opts artifactPublishO
 		published, err = publishArtifactFiles(ctx, opts, files)
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
+	}
+	manifestPath := ""
+	if !opts.NoManifest {
+		manifestPath, err = writeArtifactManifest(opts, published)
+		if err != nil {
+			return nil, "", "", err
+		}
+		manifestFile := artifactFile{Kind: "manifest", Name: artifactManifestFilename, Path: manifestPath}
+		var manifestPublished []artifactFile
+		if opts.Storage == "broker" {
+			manifestPublished, err = publishArtifactFilesBroker(ctx, coord, opts, []artifactFile{manifestFile})
+		} else {
+			manifestPublished, err = publishArtifactFiles(ctx, opts, []artifactFile{manifestFile})
+		}
+		if err != nil {
+			return nil, "", "", err
+		}
+		published = append(published, manifestPublished...)
 	}
 	body := artifactTemplateMarkdown(opts.Template, summary, "", "", published)
 	bodyPath := filepath.Join(opts.Directory, "published-artifacts.md")
 	if err := os.WriteFile(bodyPath, []byte(body), 0o644); err != nil {
-		return nil, "", exit(2, "write publish markdown: %v", err)
+		return nil, "", "", exit(2, "write publish markdown: %v", err)
 	}
 	if opts.PR > 0 && !opts.NoComment {
 		if opts.Storage == "local" && opts.BaseURL == "" {
-			return nil, "", exit(2, "artifacts publish --pr needs brokered publishing, --storage s3|r2|cloudflare, or --base-url for already-hosted local assets")
+			return nil, "", "", exit(2, "artifacts publish --pr needs brokered publishing, --storage s3|r2|cloudflare, or --base-url for already-hosted local assets")
 		}
 		if opts.DryRun {
 			fmt.Fprintf(a.Stdout, "dry-run comment: gh issue comment %d --body-file %s\n", opts.PR, bodyPath)
 		} else if err := postGitHubPRComment(ctx, opts.PR, opts.Repo, bodyPath); err != nil {
-			return nil, "", err
+			return nil, "", "", err
 		}
 	}
-	return published, bodyPath, nil
+	return published, bodyPath, manifestPath, nil
 }
 
 func defaultArtifactBundleDir(leaseID, slug string) string {

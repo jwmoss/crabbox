@@ -324,7 +324,7 @@ func (a App) desktopTerminal(ctx context.Context, args []string) error {
 			}); err != nil {
 				return err
 			}
-			published, markdownPath, err := a.publishArtifactDirectory(ctx, opts)
+			published, markdownPath, manifestPath, err := a.publishArtifactDirectory(ctx, opts)
 			if err != nil {
 				return err
 			}
@@ -336,6 +336,9 @@ func (a App) desktopTerminal(ctx context.Context, args []string) error {
 				}
 			}
 			fmt.Fprintf(a.Stdout, "markdown: %s\n", markdownPath)
+			if manifestPath != "" {
+				fmt.Fprintf(a.Stdout, "manifest: %s\n", manifestPath)
+			}
 		}
 	}
 	return nil
@@ -511,7 +514,7 @@ func (a App) desktopProof(ctx context.Context, args []string) error {
 	if opts, ok, err := publishOptionsFromDesktopFlags(dir, publishFlags); err != nil {
 		return err
 	} else if ok {
-		published, markdownPath, err := a.publishArtifactDirectory(ctx, opts)
+		published, markdownPath, manifestPath, err := a.publishArtifactDirectory(ctx, opts)
 		if err != nil {
 			return err
 		}
@@ -523,6 +526,9 @@ func (a App) desktopProof(ctx context.Context, args []string) error {
 			}
 		}
 		fmt.Fprintf(a.Stdout, "markdown: %s\n", markdownPath)
+		if manifestPath != "" {
+			fmt.Fprintf(a.Stdout, "manifest: %s\n", manifestPath)
+		}
 	}
 	return nil
 }

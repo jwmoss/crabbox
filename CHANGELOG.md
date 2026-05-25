@@ -2,6 +2,10 @@
 
 ## 0.19.1 - Unreleased
 
+### Added
+
+- Added default artifact manifests for `crabbox artifacts publish`, plus `crabbox artifacts list` and `crabbox artifacts pull` for URL-backed proof handoff with size and SHA256 verification.
+
 ### Fixed
 
 - Fixed AWS Linux desktop bootstrap so generated theme helpers include the latest WebVNC desktop styling on fresh leases.

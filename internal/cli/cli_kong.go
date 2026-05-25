@@ -270,6 +270,8 @@ type artifactsKongCmd struct {
 	Gif      artifactsGifKongCmd      `cmd:"" passthrough:"" help:"Create a trimmed GIF preview from a video."`
 	Template artifactsTemplateKongCmd `cmd:"" passthrough:"" help:"Write Mantis/OpenClaw QA summary markdown."`
 	Publish  artifactsPublishKongCmd  `cmd:"" passthrough:"" help:"Upload a bundle and optionally comment inline-ready assets on a PR."`
+	List     artifactsListKongCmd     `cmd:"" passthrough:"" help:"List files from an artifact manifest."`
+	Pull     artifactsPullKongCmd     `cmd:"" passthrough:"" help:"Download files from an artifact manifest."`
 }
 type artifactsCollectKongCmd struct {
 	Args []string `arg:"" optional:""`
@@ -284,6 +286,12 @@ type artifactsTemplateKongCmd struct {
 	Args []string `arg:"" optional:""`
 }
 type artifactsPublishKongCmd struct {
+	Args []string `arg:"" optional:""`
+}
+type artifactsListKongCmd struct {
+	Args []string `arg:"" optional:""`
+}
+type artifactsPullKongCmd struct {
 	Args []string `arg:"" optional:""`
 }
 
@@ -544,6 +552,12 @@ func (c *artifactsTemplateKongCmd) Run(ctx context.Context, app App) error {
 }
 func (c *artifactsPublishKongCmd) Run(ctx context.Context, app App) error {
 	return app.artifactsPublish(ctx, stripKongCommandPath(c.Args, "artifacts", "publish"))
+}
+func (c *artifactsListKongCmd) Run(ctx context.Context, app App) error {
+	return app.artifactsList(ctx, stripKongCommandPath(c.Args, "artifacts", "list"))
+}
+func (c *artifactsPullKongCmd) Run(ctx context.Context, app App) error {
+	return app.artifactsPull(ctx, stripKongCommandPath(c.Args, "artifacts", "pull"))
 }
 
 func (c *cacheListKongCmd) Run(ctx context.Context, app App) error {

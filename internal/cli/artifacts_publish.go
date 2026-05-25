@@ -40,6 +40,8 @@ func parseArtifactPublishOptions(args []string, stderr io.Writer) (artifactPubli
 	expires := fs.Duration("expires", envDuration("CRABBOX_ARTIFACTS_EXPIRES", 7*24*time.Hour), "presigned URL lifetime")
 	dryRun := fs.Bool("dry-run", false, "print upload/comment commands without running them")
 	noComment := fs.Bool("no-comment", false, "skip GitHub PR comment")
+	skipManifest := fs.Bool("skip-manifest", false, "skip artifact-manifest.json")
+	noManifest := fs.Bool("no-manifest", false, "alias for --skip-manifest")
 	if err := parseFlags(fs, args); err != nil {
 		return artifactPublishOptions{}, err
 	}
@@ -66,6 +68,7 @@ func parseArtifactPublishOptions(args []string, stderr io.Writer) (artifactPubli
 		Expires:     *expires,
 		DryRun:      *dryRun,
 		NoComment:   *noComment,
+		NoManifest:  *skipManifest || *noManifest,
 	}
 	if opts.Storage == "r2" {
 		if !explicit["profile"] {
@@ -134,7 +137,7 @@ func listArtifactBundleFiles(dir string) ([]artifactFile, error) {
 			return nil
 		}
 		name := entry.Name()
-		if name == "published-artifacts.md" {
+		if name == "published-artifacts.md" || name == artifactManifestFilename {
 			return nil
 		}
 		rel, err := filepath.Rel(dir, path)
@@ -158,6 +161,7 @@ func publishArtifactFiles(ctx context.Context, opts artifactPublishOptions, file
 		key := artifactObjectKey(opts.Prefix, file.Name)
 		switch opts.Storage {
 		case "local":
+			out.Key = key
 			if opts.BaseURL != "" {
 				out.URL = joinURLPath(opts.BaseURL, file.Name)
 			}
@@ -167,12 +171,14 @@ func publishArtifactFiles(ctx context.Context, opts artifactPublishOptions, file
 				return nil, err
 			}
 			out.URL = url
+			out.Key = key
 		case "cloudflare":
 			url, err := uploadArtifactCloudflare(ctx, opts, file.Path, key)
 			if err != nil {
 				return nil, err
 			}
 			out.URL = url
+			out.Key = key
 		}
 		published = append(published, out)
 	}
@@ -225,6 +231,7 @@ func publishArtifactFilesBroker(ctx context.Context, coord *CoordinatorClient, o
 		}
 		out := file
 		out.URL = grant.URL
+		out.Key = grant.Key
 		published = append(published, out)
 	}
 	return published, nil

@@ -75,7 +75,8 @@ and window chrome stay visible.
 GitHub comments cannot directly upload arbitrary local files through the issue
 comment API. `crabbox artifacts publish --pr <n>` therefore uploads files to a
 storage backend first, renders Markdown with inline image/GIF links, writes the
-same body to `published-artifacts.md`, and posts that body with `gh`.
+same body to `published-artifacts.md`, writes and publishes
+`artifact-manifest.json`, and posts that body with `gh`.
 
 Supported storage:
 
@@ -92,6 +93,20 @@ temporary links through `--presign --expires <duration>`. For Cloudflare R2,
 provide a public bucket/custom-domain `--base-url` when publishing to a PR;
 without it, the upload can succeed but the PR would only have `r2://` object
 identifiers, not inline-ready links.
+
+The manifest is written by default and contains schema version, generated time,
+backend/bucket/prefix/base URL, and one entry per proof file with kind, name,
+URL/key, MIME type, size, SHA256, optional expiry, and access policy. Use it as
+the durable handoff object:
+
+```sh
+crabbox artifacts publish --dir artifacts/blue-lobster --storage cloudflare --bucket qa-artifacts --base-url https://artifacts.example.com --no-comment
+crabbox artifacts list https://artifacts.example.com/runs/abc/artifact-manifest.json
+crabbox artifacts pull https://artifacts.example.com/runs/abc/artifact-manifest.json --output /tmp/blue-lobster-proof
+```
+
+`artifacts pull` verifies SHA256 and size before reporting success. Use
+`--skip-manifest` only for legacy markdown-only output.
 
 ## Broker Secret Model
 

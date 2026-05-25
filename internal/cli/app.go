@@ -192,6 +192,8 @@ Common Flows:
   crabbox media preview --input desktop.mp4 --output desktop-preview.gif --trimmed-video-output desktop-change.mp4
   crabbox artifacts collect --id blue-lobster --all --output artifacts/blue-lobster
   crabbox artifacts publish --pr 123 --dir artifacts/blue-lobster --storage s3 --bucket qa-artifacts
+  crabbox artifacts list artifacts/blue-lobster
+  crabbox artifacts pull artifacts/blue-lobster --output /tmp/blue-lobster-proof
   crabbox webvnc --id blue-lobster --open
   crabbox code --id blue-lobster --open
   crabbox egress start --id blue-lobster --profile discord --daemon

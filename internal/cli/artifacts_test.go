@@ -69,6 +69,32 @@ func TestParseArtifactPublishOptionsAllowsDirFromEnv(t *testing.T) {
 	}
 }
 
+func TestParseArtifactPublishOptionsSupportsSkipManifest(t *testing.T) {
+	opts, err := parseArtifactPublishOptions([]string{
+		"--dir", "bundle",
+		"--storage", "local",
+		"--skip-manifest",
+	}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.NoManifest {
+		t.Fatal("skip-manifest should disable manifest creation")
+	}
+
+	opts, err = parseArtifactPublishOptions([]string{
+		"--dir", "bundle",
+		"--storage", "local",
+		"--no-manifest",
+	}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.NoManifest {
+		t.Fatal("no-manifest should disable manifest creation")
+	}
+}
+
 func TestDefaultArtifactPublishPrefixIsUniqueAndScoped(t *testing.T) {
 	when := time.Date(2026, 5, 8, 3, 40, 41, 123456789, time.UTC)
 	got := defaultArtifactPublishPrefix(artifactPublishOptions{
@@ -297,6 +323,7 @@ func TestListArtifactBundleFilesSkipsPublishedMarkdown(t *testing.T) {
 	dir := t.TempDir()
 	mustWriteFile(t, filepath.Join(dir, "screenshot.png"), "png")
 	mustWriteFile(t, filepath.Join(dir, "published-artifacts.md"), "old")
+	mustWriteFile(t, filepath.Join(dir, artifactManifestFilename), "{}")
 	mustWriteFile(t, filepath.Join(dir, "nested", "logs.txt"), "logs")
 	files, err := listArtifactBundleFiles(dir)
 	if err != nil {
@@ -309,6 +336,60 @@ func TestListArtifactBundleFilesSkipsPublishedMarkdown(t *testing.T) {
 	got := strings.Join(names, ",")
 	if got != "nested/logs.txt,screenshot.png" {
 		t.Fatalf("files=%s", got)
+	}
+}
+
+func TestArtifactsPublishWritesManifestByDefault(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte("png-data")
+	mustWriteFile(t, filepath.Join(dir, "screenshot.png"), string(data))
+
+	var stdout bytes.Buffer
+	app := App{Stdout: &stdout, Stderr: io.Discard}
+	err := app.artifactsPublish(context.Background(), []string{
+		"--dir", dir,
+		"--storage", "local",
+		"--base-url", "https://artifacts.example.com/proof",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "manifest:") {
+		t.Fatalf("stdout missing manifest path:\n%s", stdout.String())
+	}
+	manifest, _, err := readArtifactManifestRef(context.Background(), filepath.Join(dir, artifactManifestFilename))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.SchemaVersion != 1 || manifest.Storage.Backend != "local" || len(manifest.Files) != 1 {
+		t.Fatalf("manifest=%#v", manifest)
+	}
+	file := manifest.Files[0]
+	if file.Name != "screenshot.png" || file.ContentType != "image/png" || file.Size != int64(len(data)) || file.SHA256 == "" {
+		t.Fatalf("file=%#v", file)
+	}
+	if file.URL != "https://artifacts.example.com/proof/screenshot.png" {
+		t.Fatalf("url=%q", file.URL)
+	}
+	if file.AccessPolicy != "public" {
+		t.Fatalf("accessPolicy=%q", file.AccessPolicy)
+	}
+}
+
+func TestArtifactsPublishSkipManifest(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteFile(t, filepath.Join(dir, "screenshot.png"), "png-data")
+	app := App{Stdout: io.Discard, Stderr: io.Discard}
+	err := app.artifactsPublish(context.Background(), []string{
+		"--dir", dir,
+		"--storage", "local",
+		"--skip-manifest",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, artifactManifestFilename)); !os.IsNotExist(err) {
+		t.Fatalf("manifest should not exist, stat err=%v", err)
 	}
 }
 
@@ -416,6 +497,353 @@ func TestPublishArtifactFilesBrokerUploadsViaGrantedURL(t *testing.T) {
 	}
 	if len(published) != 1 || published[0].URL != "https://artifacts.example.com/runs/abc/screenshot.png" {
 		t.Fatalf("published=%#v", published)
+	}
+	if published[0].Key != "runs/abc/screenshot.png" {
+		t.Fatalf("key=%q", published[0].Key)
+	}
+}
+
+func TestArtifactsPullDownloadsAndVerifiesManifest(t *testing.T) {
+	payload := []byte("png-data")
+	hash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/screenshot.png" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("content-type", "image/png")
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	manifest := artifactManifest{
+		SchemaVersion: 1,
+		GeneratedAt:   "2026-05-25T00:00:00Z",
+		Storage:       artifactManifestStore{Backend: "local"},
+		Files: []artifactManifestFile{{
+			Kind:        "screenshot",
+			Name:        "nested/screenshot.png",
+			URL:         server.URL + "/screenshot.png",
+			ContentType: "image/png",
+			Size:        int64(len(payload)),
+			SHA256:      hash,
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(dir, artifactManifestFilename)
+	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "pull")
+	result, err := pullArtifactManifest(context.Background(), manifestPath, output, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Files) != 1 || result.Files[0].SHA256 != hash {
+		t.Fatalf("result=%#v", result)
+	}
+	got, err := os.ReadFile(filepath.Join(output, "nested", "screenshot.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("payload=%q", got)
+	}
+
+	remoteManifest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write(data)
+	}))
+	defer remoteManifest.Close()
+	listed, ref, err := readArtifactManifestRef(context.Background(), remoteManifest.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref != remoteManifest.URL || len(listed.Files) != 1 {
+		t.Fatalf("listed=%#v ref=%s", listed, ref)
+	}
+}
+
+func TestArtifactsPullAllowsOutputAfterManifestRef(t *testing.T) {
+	dir := t.TempDir()
+	payload := []byte("png-data")
+	hash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	if err := os.WriteFile(filepath.Join(dir, "screenshot.png"), payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := artifactManifest{
+		SchemaVersion: 1,
+		GeneratedAt:   "2026-05-25T00:00:00Z",
+		Storage:       artifactManifestStore{Backend: "local"},
+		Files: []artifactManifestFile{{
+			Kind:        "screenshot",
+			Name:        "screenshot.png",
+			Path:        "screenshot.png",
+			ContentType: "image/png",
+			Size:        int64(len(payload)),
+			SHA256:      hash,
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(dir, artifactManifestFilename)
+	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "pull")
+	var stdout bytes.Buffer
+	app := App{Stdout: &stdout, Stderr: io.Discard}
+	if err := app.artifactsPull(context.Background(), []string{manifestPath, "--output", output}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stdout.String(), "pulled:") {
+		t.Fatalf("stdout=%q", stdout.String())
+	}
+	got, err := os.ReadFile(filepath.Join(output, "screenshot.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("payload=%q", got)
+	}
+}
+
+func TestArtifactsPullUsesLocalPathForR2ManifestURL(t *testing.T) {
+	dir := t.TempDir()
+	payload := []byte("png-data")
+	hash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	if err := os.WriteFile(filepath.Join(dir, "screenshot.png"), payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest := artifactManifest{
+		SchemaVersion: 1,
+		GeneratedAt:   "2026-05-25T00:00:00Z",
+		Storage:       artifactManifestStore{Backend: "cloudflare"},
+		Files: []artifactManifestFile{{
+			Kind:        "screenshot",
+			Name:        "screenshot.png",
+			Path:        "screenshot.png",
+			URL:         "r2://qa-artifacts/runs/abc/screenshot.png",
+			ContentType: "image/png",
+			Size:        int64(len(payload)),
+			SHA256:      hash,
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(dir, artifactManifestFilename)
+	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "pull")
+	result, err := pullArtifactManifest(context.Background(), manifestPath, output, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Files) != 1 || result.Files[0].URL != "r2://qa-artifacts/runs/abc/screenshot.png" {
+		t.Fatalf("result=%#v", result)
+	}
+	got, err := os.ReadFile(filepath.Join(output, "screenshot.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("payload=%q", got)
+	}
+}
+
+func TestArtifactsPullRejectsHashMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("changed"))
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	manifest := artifactManifest{
+		SchemaVersion: 1,
+		GeneratedAt:   "2026-05-25T00:00:00Z",
+		Storage:       artifactManifestStore{Backend: "local"},
+		Files: []artifactManifestFile{{
+			Name:   "screenshot.png",
+			URL:    server.URL,
+			SHA256: strings.Repeat("0", 64),
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(dir, artifactManifestFilename)
+	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "pull")
+	if err := os.MkdirAll(output, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	existing := filepath.Join(output, "screenshot.png")
+	if err := os.WriteFile(existing, []byte("known-good"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pullArtifactManifest(context.Background(), manifestPath, output, true)
+	if err == nil || !strings.Contains(err.Error(), "hash mismatch") {
+		t.Fatalf("err=%v", err)
+	}
+	got, err := os.ReadFile(existing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "known-good" {
+		t.Fatalf("existing output was replaced: %q", got)
+	}
+	temps, err := filepath.Glob(filepath.Join(output, ".screenshot.png.tmp-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(temps) != 0 {
+		t.Fatalf("temporary outputs left behind: %v", temps)
+	}
+}
+
+func TestArtifactsPullRejectsRemotePathOnlyManifest(t *testing.T) {
+	manifest := artifactManifest{
+		SchemaVersion: 1,
+		GeneratedAt:   "2026-05-25T00:00:00Z",
+		Storage:       artifactManifestStore{Backend: "broker"},
+		Files: []artifactManifestFile{{
+			Name: "screenshot.png",
+			Path: "/etc/passwd",
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write(data)
+	}))
+	defer server.Close()
+	_, err = pullArtifactManifest(context.Background(), server.URL, filepath.Join(t.TempDir(), "pull"), false)
+	if err == nil || !strings.Contains(err.Error(), "requires url") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestArtifactsPullRejectsEscapingLocalPath(t *testing.T) {
+	dir := t.TempDir()
+	manifest := artifactManifest{
+		SchemaVersion: 1,
+		GeneratedAt:   "2026-05-25T00:00:00Z",
+		Storage:       artifactManifestStore{Backend: "local"},
+		Files: []artifactManifestFile{{
+			Name: "screenshot.png",
+			Path: "../secret.txt",
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(dir, artifactManifestFilename)
+	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err = pullArtifactManifest(context.Background(), manifestPath, filepath.Join(dir, "pull"), false)
+	if err == nil || !strings.Contains(err.Error(), "invalid artifact source path") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestArtifactsPullRejectsSymlinkedLocalSource(t *testing.T) {
+	dir := t.TempDir()
+	outside := filepath.Join(dir, "outside.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bundle := filepath.Join(dir, "bundle")
+	if err := os.MkdirAll(bundle, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(bundle, "secret")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	manifest := artifactManifest{
+		SchemaVersion: 1,
+		GeneratedAt:   "2026-05-25T00:00:00Z",
+		Storage:       artifactManifestStore{Backend: "local"},
+		Files: []artifactManifestFile{{
+			Name: "secret",
+			Path: "secret",
+		}},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(bundle, artifactManifestFilename)
+	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "pull")
+	_, err = pullArtifactManifest(context.Background(), manifestPath, output, false)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(output, "secret")); !os.IsNotExist(err) {
+		t.Fatalf("pulled symlink source should not exist, stat err=%v", err)
+	}
+}
+
+func TestArtifactsPullRejectsSymlinkedOutputParent(t *testing.T) {
+	payload := []byte("png-data")
+	hash := fmt.Sprintf("%x", sha256.Sum256(payload))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/artifact-manifest.json" {
+			manifest := artifactManifest{
+				SchemaVersion: 1,
+				GeneratedAt:   "2026-05-25T00:00:00Z",
+				Storage:       artifactManifestStore{Backend: "broker"},
+				Files: []artifactManifestFile{{
+					Kind:   "screenshot",
+					Name:   "link/owned.txt",
+					URL:    "http://" + r.Host + "/owned.txt",
+					Size:   int64(len(payload)),
+					SHA256: hash,
+				}},
+			}
+			_ = json.NewEncoder(w).Encode(manifest)
+			return
+		}
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	dir := t.TempDir()
+	output := filepath.Join(dir, "pull")
+	outside := filepath.Join(dir, "outside")
+	if err := os.MkdirAll(output, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(output, "link")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	_, err := pullArtifactManifest(context.Background(), server.URL+"/artifact-manifest.json", output, false)
+	if err == nil || !strings.Contains(err.Error(), "symlinked parent") {
+		t.Fatalf("err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "owned.txt")); !os.IsNotExist(err) {
+		t.Fatalf("outside file should not exist, stat err=%v", err)
 	}
 }
 

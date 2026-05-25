@@ -130,10 +130,12 @@ crabbox artifacts publish \
   --base-url https://artifacts.example.com
 ```
 
-`publish` uploads bundle files, writes `published-artifacts.md`, and comments
-on the PR with inline images/GIFs plus links to videos, logs, and metadata.
-Use `--dry-run` to generate markdown and print intended actions without upload
-or comment side effects.
+`publish` uploads bundle files, writes and publishes `artifact-manifest.json`,
+writes `published-artifacts.md`, and comments on the PR with inline images/GIFs
+plus links to videos, logs, metadata, and the manifest. Use `--dry-run` to
+generate markdown and print intended actions without upload or comment side
+effects. Pass `--skip-manifest` only when a caller explicitly wants the old
+markdown-only publish output.
 
 Storage backends:
 
@@ -161,10 +163,47 @@ S3 flags:
 --acl <acl>
 --presign
 --expires <duration> default 168h
+--skip-manifest
+--no-manifest alias for --skip-manifest
 ```
 
 When `--base-url` is supplied, published links use that public URL. Otherwise
 `--presign` generates temporary AWS/R2 S3 URLs after upload.
+
+## Manifest, List, And Pull
+
+Every publish writes and publishes an `artifact-manifest.json` by default. The
+manifest is the durable handoff for PR proof and contains one entry per
+published file:
+
+```json
+{
+  "schemaVersion": 1,
+  "storage": { "backend": "broker", "prefix": "pr-123/blue-lobster" },
+  "files": [
+    {
+      "kind": "screenshot",
+      "name": "screenshot.png",
+      "url": "https://artifacts.example.com/pr-123/blue-lobster/screenshot.png",
+      "contentType": "image/png",
+      "size": 12345,
+      "sha256": "..."
+    }
+  ]
+}
+```
+
+Inspect or fetch that manifest later:
+
+```sh
+crabbox artifacts list artifacts/blue-lobster/artifact-manifest.json
+crabbox artifacts list artifacts/blue-lobster --json
+crabbox artifacts pull artifacts/blue-lobster/artifact-manifest.json --output /tmp/blue-lobster-proof
+```
+
+`pull` downloads URLs or copies local manifest paths, preserves nested artifact
+names, and verifies SHA256 and size when the manifest provides them. Existing
+output files are rejected unless `--overwrite` is set.
 
 Cloudflare R2 flags:
 
