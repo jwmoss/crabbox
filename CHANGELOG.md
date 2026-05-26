@@ -11,6 +11,7 @@
 - Added `crabbox logs --tail`, `crabbox events --type`, `crabbox events --phase`, and `crabbox results --failed-only` for faster recorded-run triage.
 ### Fixed
 
+- Fixed Blacksmith Testbox runs so repo-level env allowlists for SSH-backed providers no longer block delegated Testbox warmup.
 - Fixed AWS Linux desktop bootstrap so generated theme helpers include the latest WebVNC desktop styling on fresh leases.
 - Fixed AWS Linux desktop bootstrap so existing desktop services are restarted after profile changes instead of leaving stale XFCE/X11 services running under a Wayland profile.
 - Changed the experimental Wayland desktop bootstrap to use labwc, giving WebVNC sessions normal draggable, decorated windows instead of Sway tiling defaults.
