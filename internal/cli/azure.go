@@ -474,6 +474,34 @@ func nextAzureNSGPriority(used map[int32]bool) (int32, error) {
 }
 
 func (c *AzureClient) CreateServerWithFallback(ctx context.Context, cfg Config, publicKey, leaseID, slug string, keep bool, logf func(string, ...any)) (Server, Config, error) {
+	regions := azureRegionCandidates(cfg, c.Location)
+	var errs []error
+	for _, region := range regions {
+		nextCfg := azureConfigForLocation(cfg, region, len(regions) > 1)
+		client := c
+		if region != c.Location || len(regions) > 1 {
+			var err error
+			client, err = NewAzureClient(ctx, nextCfg)
+			if err != nil {
+				return Server{}, nextCfg, err
+			}
+		}
+		if logf != nil && region != c.Location {
+			logf("fallback provisioning region=%s after Azure capacity rejection\n", region)
+		}
+		server, resolved, err := client.createServerWithFallbackInLocation(ctx, nextCfg, publicKey, leaseID, slug, keep, logf)
+		if err == nil {
+			return server, resolved, nil
+		}
+		errs = append(errs, fmt.Errorf("%s: %w", region, err))
+		if !isAzureRetryableProvisioningError(err) {
+			return Server{}, nextCfg, joinErrors(errs)
+		}
+	}
+	return Server{}, cfg, joinErrors(errs)
+}
+
+func (c *AzureClient) createServerWithFallbackInLocation(ctx context.Context, cfg Config, publicKey, leaseID, slug string, keep bool, logf func(string, ...any)) (Server, Config, error) {
 	if err := c.EnsureSharedInfra(ctx); err != nil {
 		return Server{}, cfg, err
 	}
@@ -521,6 +549,38 @@ func (c *AzureClient) CreateServerWithFallback(ctx context.Context, cfg Config, 
 		}
 	}
 	return Server{}, cfg, joinErrors(errs)
+}
+
+func azureRegionCandidates(cfg Config, preferredLocation string) []string {
+	return appendUniqueStrings([]string{preferredLocation, cfg.AzureLocation}, cfg.Capacity.Regions...)
+}
+
+func azureConfigForLocation(cfg Config, location string, multiRegion bool) Config {
+	cfg.AzureLocation = location
+	if multiRegion {
+		cfg.AzureVNet = azureRegionalName(cfg.AzureVNet, location)
+		cfg.AzureNSG = azureRegionalName(cfg.AzureNSG, location)
+	}
+	return cfg
+}
+
+func azureRegionalName(base, location string) string {
+	if base == "" {
+		return base
+	}
+	suffix := strings.Trim(strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
+			return r
+		}
+		if r >= 'A' && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		return '-'
+	}, strings.TrimSpace(location)), "-")
+	if suffix == "" || strings.HasSuffix(strings.ToLower(base), "-"+suffix) {
+		return base
+	}
+	return base + "-" + suffix
 }
 
 func (c *AzureClient) createServer(ctx context.Context, cfg Config, publicKey, leaseID, slug string, keep bool) (server Server, err error) {
@@ -1027,7 +1087,8 @@ func isAzureRetryableProvisioningError(err error) bool {
 		strings.Contains(s, "OperationNotAllowed") ||
 		strings.Contains(s, "AllocationFailed") ||
 		strings.Contains(s, "ZonalAllocationFailed") ||
-		strings.Contains(s, "OverconstrainedAllocationRequest")
+		strings.Contains(s, "OverconstrainedAllocationRequest") ||
+		strings.Contains(s, "NotAvailableForSubscription")
 }
 
 func isAzureNotFoundError(err error) bool {

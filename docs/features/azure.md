@@ -63,6 +63,12 @@ SKU cannot be created. Spot leases fall back to on-demand when
 `Delete` and `billingProfile.maxPrice: -1`, so price alone does not evict a
 lease while Azure still charges no more than the on-demand price.
 
+Set `capacity.regions`, or broker-side `CRABBOX_AZURE_REGIONS`, to let Azure
+follow the same ordered region fallback model as AWS. Crabbox keeps
+single-region shared network names unchanged, but for multi-region Azure
+fallback it appends the region to the managed vnet and NSG names so one
+resource group can hold independent regional networks.
+
 Default Azure Linux class candidates mirror the vCPU scale of the AWS Linux
 class table. Default Azure Windows candidates mirror the AWS native Windows
 class table. Azure leases use managed `StandardSSD_LRS` OS disks by default so

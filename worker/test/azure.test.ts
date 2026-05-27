@@ -4,8 +4,12 @@ import {
   AzureClient,
   azureLabelsFromTags,
   azureLROPollIntervalMS,
+  azureProvisioningErrorCategory,
+  azureRegionCandidates,
+  azureRegionalName,
   azureSupportsEphemeralOS,
   azureTagsFromLabels,
+  conciseAzureProvisioningMessage,
   isRetryableDeleteError,
   isRetryableProvisioningError,
   preserveNonCrabboxRules,
@@ -96,8 +100,34 @@ describe("azure provider", () => {
     expect(isRetryableProvisioningError("QuotaExceeded for cores")).toBe(true);
     expect(isRetryableProvisioningError("AllocationFailed")).toBe(true);
     expect(isRetryableProvisioningError("OverconstrainedAllocationRequest")).toBe(true);
+    expect(isRetryableProvisioningError("NotAvailableForSubscription")).toBe(true);
     expect(isRetryableProvisioningError("ResourceNotFound")).toBe(false);
     expect(isRetryableProvisioningError("")).toBe(false);
+  });
+
+  it("orders Azure region candidates from defaults, env, and capacity regions", () => {
+    expect(
+      azureRegionCandidates(
+        { azureLocation: "eastus", capacityRegions: ["westeurope", "eastus"] },
+        { CRABBOX_AZURE_LOCATION: "centralus", CRABBOX_AZURE_REGIONS: "northeurope,westeurope" },
+        "eastus",
+      ),
+    ).toEqual(["eastus", "centralus", "northeurope", "westeurope"]);
+    expect(azureRegionalName("crabbox-vnet", "West Europe")).toBe("crabbox-vnet-west-europe");
+    expect(azureRegionalName("crabbox-vnet-westeurope", "westeurope")).toBe(
+      "crabbox-vnet-westeurope",
+    );
+  });
+
+  it("classifies and condenses Azure provisioning failures for capacity hints", () => {
+    const body =
+      '{"error":{"code":"SkuNotAvailable","message":"The requested VM size is currently not available. Try another size."}}';
+    expect(azureProvisioningErrorCategory(body)).toBe("capacity");
+    expect(conciseAzureProvisioningMessage(body)).toBe(
+      "The requested VM size is currently not available",
+    );
+    expect(azureProvisioningErrorCategory("QuotaExceeded for cores")).toBe("quota");
+    expect(azureProvisioningErrorCategory("NotAvailableForSubscription")).toBe("policy");
   });
 
   it("classifies transient Azure delete dependency errors as retryable", () => {
