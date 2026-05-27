@@ -2099,6 +2099,9 @@ function finiteNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+const opaqueAWSHTTP400XMLOnlyError =
+  /^(?:[^;]+:\s*)?aws [A-Za-z]+: http 400: <\?xml version="1\.0" encoding="UTF-8"\?>\s*(?:;\s*(?:[^;]+:\s*)?aws [A-Za-z]+: http 400: <\?xml version="1\.0" encoding="UTF-8"\?>\s*)*$/;
+
 export function awsProvisioningErrorCategory(message: string): string {
   if (message.includes("no available EC2 Mac Dedicated Host")) {
     return "capacity";
@@ -2124,7 +2127,7 @@ export function awsProvisioningErrorCategory(message: string): string {
   ) {
     return "policy";
   }
-  if (/^aws [A-Za-z]+: http 400: <\?xml version="1\.0" encoding="UTF-8"\?>\s*$/.test(message)) {
+  if (opaqueAWSHTTP400XMLOnlyError.test(message)) {
     return "capacity";
   }
   return "";

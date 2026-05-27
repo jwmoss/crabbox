@@ -426,6 +426,21 @@ describe("aws provider", () => {
     ).toBe(true);
     expect(
       awsProvisioningErrorCategory(
+        'c7a.48xlarge: aws RunInstances: http 400: <?xml version="1.0" encoding="UTF-8"?>',
+      ),
+    ).toBe("capacity");
+    expect(
+      isRetryableAWSProvisioningError(
+        'c7a.48xlarge: aws RunInstances: http 400: <?xml version="1.0" encoding="UTF-8"?>; c7i.48xlarge: aws RunInstances: http 400: <?xml version="1.0" encoding="UTF-8"?>',
+      ),
+    ).toBe(true);
+    expect(
+      awsProvisioningErrorCategory(
+        'c7a.48xlarge: aws RunInstances: http 400: <?xml version="1.0" encoding="UTF-8"?>; c7i.48xlarge: aws RunInstances: http 400: <?xml version="1.0" encoding="UTF-8"?><Response><Errors><Error><Code>InvalidGroup.NotFound</Code><Message>missing</Message></Error></Errors></Response>',
+      ),
+    ).toBe("");
+    expect(
+      awsProvisioningErrorCategory(
         'aws AuthorizeSecurityGroupIngress: http 400: <?xml version="1.0" encoding="UTF-8"?>',
       ),
     ).toBe("capacity");
