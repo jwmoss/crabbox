@@ -9,6 +9,7 @@
 - Added a portable `--os`/`os` lease selector with Ubuntu 26.04 as the preferred Linux image where provider catalogs support it, while preserving explicit provider image overrides.
 - Added Azure `capacity.regions` fallback with region-scoped managed network names and Azure capacity hints, matching the AWS capacity-routing model.
 - Added a repo-local Crabbox hydrate workflow and documented Azure as the preferred Windows/WSL2 provider when Azure quota or credits are available.
+- Added `crabbox run --lease-output <file>` for reusable delegated-run session JSON, starting with Blacksmith Testbox. Thanks @RomneyDa.
 
 ### Fixed
 
