@@ -8,6 +8,7 @@
 - Added native Windows support for GitHub-runner Actions hydration so workflows can prepare Windows leases before Crabbox attaches to the hydrated workspace.
 - Added a portable `--os`/`os` lease selector with Ubuntu 26.04 as the preferred Linux image where provider catalogs support it, while preserving explicit provider image overrides.
 - Added Azure `capacity.regions` fallback with region-scoped managed network names and Azure capacity hints, matching the AWS capacity-routing model.
+- Added a repo-local Crabbox hydrate workflow and documented Azure as the preferred Windows/WSL2 provider when Azure quota or credits are available.
 
 ### Fixed
 

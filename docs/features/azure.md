@@ -15,6 +15,11 @@ Windows WSL2 bootstrap and then uses the POSIX sync/run contract through WSL.
 It works in direct mode with local Azure auth and in brokered mode through
 Worker-owned service principal secrets.
 
+Prefer Azure for Windows and Windows WSL2 when your Azure subscription has
+credits or available quota. It now has the same capacity-routing shape as AWS
+for brokered leases, while keeping Windows classes smaller and cheaper than the
+large Linux-focused classes.
+
 ## Targets
 
 | Target | Managed | Notes |
@@ -120,6 +125,7 @@ CRABBOX_AZURE_SUBNET
 CRABBOX_AZURE_NSG
 CRABBOX_AZURE_SSH_CIDRS
 CRABBOX_AZURE_NETWORK
+CRABBOX_AZURE_REGIONS
 ```
 
 The service principal needs the
@@ -130,7 +136,9 @@ create the resource group on first use).
 Brokered Azure uses `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`,
 `AZURE_CLIENT_SECRET`, and `AZURE_SUBSCRIPTION_ID` on the Worker. Operators
 own the shared infra settings through `CRABBOX_AZURE_*`. Lease requests may
-override only `azureLocation`, `azureImage`, and `azureOSDisk`.
+override only `azureLocation`, `azureImage`, and `azureOSDisk`. Use
+`CRABBOX_AZURE_REGIONS` for Azure broker fallback; keep
+`CRABBOX_CAPACITY_REGIONS` for AWS.
 
 ## Shared Infra
 

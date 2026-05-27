@@ -18,6 +18,11 @@ when Microsoft tooling, Entra ID, or Azure-specific networking constraints
 make AWS or Hetzner inappropriate. Use Hetzner for cheaper Linux-only
 capacity and AWS for macOS targets.
 
+For Windows and Windows WSL2, Azure is a good default when the subscription has
+healthy credits or reserved capacity: the class table is smaller than AWS's
+Linux-heavy defaults, WSL2 uses Azure nested-virtualization SKUs, and brokered
+leases now use the same ordered capacity-region fallback model as AWS.
+
 Azure supports direct mode and brokered Linux/native Windows/WSL2 leases. Direct
 mode uses local Azure credentials. Brokered mode uses the operator-owned
 Azure service principal configured on the Worker.
@@ -86,6 +91,7 @@ CRABBOX_AZURE_SUBNET
 CRABBOX_AZURE_NSG
 CRABBOX_AZURE_SSH_CIDRS
 CRABBOX_AZURE_NETWORK
+CRABBOX_AZURE_REGIONS
 ```
 
 `CRABBOX_AZURE_NETWORK` selects the IP used for SSH: `public` (default) uses
@@ -107,7 +113,9 @@ Brokered mode uses the same Azure service-principal secrets on the Worker:
 `AZURE_SUBSCRIPTION_ID`. Operators own the resource group, vnet, subnet,
 NSG, OS disk mode, and SSH CIDR defaults through `CRABBOX_AZURE_*` env vars. A
 lease request may override only `azureLocation`, `azureImage`, and
-`azureOSDisk`.
+`azureOSDisk`. Set `CRABBOX_AZURE_REGIONS` on the Worker for Azure-specific
+broker capacity fallback; `CRABBOX_CAPACITY_REGIONS` remains the AWS region
+fallback list.
 
 Run `crabbox doctor --provider azure --target windows` before leasing through
 the broker. The coordinator readiness check reports missing Worker secret names
