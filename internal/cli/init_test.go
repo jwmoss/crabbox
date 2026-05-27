@@ -142,6 +142,9 @@ func TestInitProjectDetectsRepoCommands(t *testing.T) {
 	if _, ok := loaded.Jobs["detected"]; !ok {
 		t.Fatalf("generated config missing detected job: %#v", loaded.Jobs)
 	}
+	if err := validatePreflightTools(loaded.Run.PreflightTools); err != nil {
+		t.Fatalf("generated preflight tools should validate: %v", err)
+	}
 }
 
 func TestWriteInitFileBranches(t *testing.T) {

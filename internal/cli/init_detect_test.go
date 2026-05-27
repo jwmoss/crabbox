@@ -15,6 +15,7 @@ func TestDetectInitProjectPackageManagers(t *testing.T) {
 	writeInitDetectFile(t, dir, "tool/bun.lockb", "")
 	writeInitDetectFile(t, dir, "web/package.json", `{"packageManager":"yarn@4.0.0","scripts":{"test":"vitest run"}}`)
 	writeInitDetectFile(t, dir, "web/yarn.lock", "")
+	writeInitDetectFile(t, dir, "rust/Cargo.toml", "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n")
 	writeInitDetectFile(t, dir, "Makefile", ".PHONY: test\ntest:\n\tgo test ./...\n")
 
 	got := detectInitProject(dir)
@@ -22,16 +23,20 @@ func TestDetectInitProjectPackageManagers(t *testing.T) {
 		"corepack enable && pnpm --dir 'app' install --frozen-lockfile && pnpm --dir 'app' run 'test:ci'",
 		"bun install --cwd 'tool' --frozen-lockfile && bun --cwd 'tool' run 'build'",
 		"corepack enable && yarn --cwd 'web' install --immutable && yarn --cwd 'web' 'test'",
+		"(cd 'rust' && cargo test)",
 		"make test",
 	} {
 		if !initDetectContains(got.Commands, want) {
 			t.Fatalf("detected commands missing %q: %#v", want, got.Commands)
 		}
 	}
-	for _, want := range []string{"corepack", "pnpm", "bun", "yarn", "make"} {
+	for _, want := range []string{"corepack", "pnpm", "bun", "yarn", "cargo", "make"} {
 		if !initDetectContains(got.PreflightTools, want) {
 			t.Fatalf("detected tools missing %q: %#v", want, got.PreflightTools)
 		}
+	}
+	if err := validatePreflightTools(got.PreflightTools); err != nil {
+		t.Fatalf("detected preflight tools should validate: %v", err)
 	}
 }
 
