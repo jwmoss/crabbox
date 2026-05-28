@@ -106,6 +106,29 @@ func TestBlacksmithWarmupArgsDoesNotUseGenericActionsHydrateWorkflow(t *testing.
 	}
 }
 
+func TestBlacksmithWarmupArgsPrefersExplicitConfigOverGenericActionsConfig(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Actions.Workflow = ".github/workflows/crabbox-hydrate.yml"
+	cfg.Actions.Job = "hydrate"
+	cfg.Actions.Ref = "actions-ref"
+	cfg.Blacksmith.Workflow = ".github/workflows/ci-check-testbox.yml"
+	cfg.Blacksmith.Job = "check"
+	cfg.Blacksmith.Ref = "testbox-ref"
+	got, err := blacksmithWarmupArgs(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"testbox", "warmup", ".github/workflows/ci-check-testbox.yml",
+		"--job", "check",
+		"--ref", "testbox-ref",
+		"--idle-timeout", "30",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("args=%#v want %#v", got, want)
+	}
+}
+
 func TestBlacksmithWarmupArgsRequiresWorkflow(t *testing.T) {
 	cfg := baseConfig()
 	_, err := blacksmithWarmupArgs(cfg, "")

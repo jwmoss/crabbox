@@ -1960,6 +1960,9 @@ func TestCommandRuntimePreflightToolsFocusesEntrypoint(t *testing.T) {
 	if got := strings.Join(commandRuntimePreflightTools([]string{"powershell -NoProfile -Command \"$env:Path = 'C:\\node;' + $env:Path; node -v\""}, true), ","); got != "" {
 		t.Fatalf("PowerShell wrapper should not be preflight-blocked, got %q", got)
 	}
+	if got := strings.Join(commandRuntimePreflightTools([]string{"pwsh.exe", "-NoProfile", "-Command", "$env:Path = 'C:\\node;' + $env:Path; pnpm test"}, false), ","); got != "" {
+		t.Fatalf("pwsh wrapper should not be preflight-blocked, got %q", got)
+	}
 	if got := strings.Join(commandRuntimePreflightTools([]string{"sudo apt-get update && sudo apt-get install -y nodejs npm && npm test"}, true), ","); got != "" {
 		t.Fatalf("sudo runtime setup command should not be preflight-blocked, got %q", got)
 	}
