@@ -113,6 +113,7 @@ func TestBlacksmithWarmupArgsFallsBackToArbitraryActionsWorkflowName(t *testing.
 
 func TestBlacksmithWarmupArgsDoesNotUseGenericActionsHydrateWorkflow(t *testing.T) {
 	for _, workflow := range []string{
+		"Crabbox Hydrate",
 		".github/workflows/crabbox.yml",
 		".github/workflows/crabbox-hydrate.yml",
 		".github/workflows/hydrate.yml",

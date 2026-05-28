@@ -211,9 +211,11 @@ func blacksmithCanFallbackToActionsWorkflow(cfg Config) bool {
 }
 
 func blacksmithLooksLikeGenericHydrateWorkflow(workflow string) bool {
-	name := strings.ToLower(strings.TrimSpace(filepath.Base(workflow)))
-	switch name {
-	case "hydrate", "hydrate.yml", "hydrate.yaml", "crabbox", "crabbox.yml", "crabbox.yaml", "crabbox-hydrate", "crabbox-hydrate.yml", "crabbox-hydrate.yaml":
+	name := strings.TrimSpace(filepath.Base(workflow))
+	stem := strings.TrimSuffix(name, filepath.Ext(name))
+	normalized := strings.NewReplacer(" ", "", "-", "", "_", "").Replace(strings.ToLower(stem))
+	switch normalized {
+	case "hydrate", "crabbox", "crabboxhydrate":
 		return true
 	}
 	return false
