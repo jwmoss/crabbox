@@ -424,7 +424,17 @@ func azureDynamicSessionsStatusReady(status string) bool {
 
 func isNotFoundError(err error) bool {
 	var apiErr *azureDynamicSessionsAPIError
-	return errors.As(err, &apiErr) && apiErr.StatusCode == 404
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	if apiErr.StatusCode == 404 {
+		return true
+	}
+	if apiErr.StatusCode != 400 {
+		return false
+	}
+	return strings.Contains(apiErr.Body, "SessionWithIdentifierNotFound") ||
+		strings.Contains(apiErr.Body, "SessionNotFound")
 }
 
 func (b *azureDynamicSessionsBackend) now() time.Time {

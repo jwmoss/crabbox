@@ -128,6 +128,29 @@ func TestStopRemovesStaleClaimWhenSessionIsGone(t *testing.T) {
 	}
 }
 
+func TestStopRemovesStaleClaimOnAzureMissingSessionCode(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	if err := claimLeaseForRepoProvider("azds-stale-400", "stale-session-400", providerName, t.TempDir(), time.Minute, false); err != nil {
+		t.Fatal(err)
+	}
+	fake := &recordingAzureDynamicSessionsAPI{
+		deleteErr: &azureDynamicSessionsAPIError{
+			StatusCode: 400,
+			Status:     "400 Bad Request",
+			Body:       `{"error":{"code":"SessionWithIdentifierNotFound","message":"session not found"}}`,
+		},
+	}
+	restoreAzureDynamicSessionsClient(t, fake)
+	backend := testAzureDynamicSessionsBackend()
+
+	if err := backend.Stop(context.Background(), StopRequest{ID: "stale-session-400"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := resolveLeaseClaimForProvider("stale-session-400", providerName); err != nil || ok {
+		t.Fatalf("claim after stale stop ok=%t err=%v", ok, err)
+	}
+}
+
 func TestResolveSessionIDRequiresLocalClaim(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	backend := &azureDynamicSessionsBackend{}
