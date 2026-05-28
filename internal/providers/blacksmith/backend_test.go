@@ -95,6 +95,22 @@ func TestBlacksmithWarmupArgsFallsBackToTestboxActionsConfig(t *testing.T) {
 	}
 }
 
+func TestBlacksmithWarmupArgsFallsBackToArbitraryActionsWorkflowName(t *testing.T) {
+	cfg := baseConfig()
+	cfg.Actions.Workflow = ".github/workflows/ci.yml"
+	cfg.Actions.Job = "integration"
+	cfg.Actions.Ref = "trunk"
+	got, err := blacksmithWarmupArgs(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{".github/workflows/ci.yml", "--job", "integration", "--ref", "trunk"} {
+		if !containsString(got, want) {
+			t.Fatalf("args missing %q: %#v", want, got)
+		}
+	}
+}
+
 func TestBlacksmithWarmupArgsDoesNotUseGenericActionsHydrateWorkflow(t *testing.T) {
 	cfg := baseConfig()
 	cfg.Actions.Workflow = ".github/workflows/crabbox-hydrate.yml"

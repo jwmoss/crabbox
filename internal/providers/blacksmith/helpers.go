@@ -3,6 +3,7 @@ package blacksmith
 import (
 	"flag"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -171,7 +172,7 @@ func blacksmithWorkflow(cfg Config) string {
 	if cfg.Blacksmith.Workflow != "" {
 		return cfg.Blacksmith.Workflow
 	}
-	if strings.Contains(strings.ToLower(cfg.Actions.Workflow), "testbox") {
+	if blacksmithCanFallbackToActionsWorkflow(cfg) {
 		return cfg.Actions.Workflow
 	}
 	return ""
@@ -181,7 +182,7 @@ func blacksmithJob(cfg Config) string {
 	if cfg.Blacksmith.Job != "" {
 		return cfg.Blacksmith.Job
 	}
-	if cfg.Blacksmith.Workflow == "" && strings.Contains(strings.ToLower(cfg.Actions.Workflow), "testbox") {
+	if cfg.Blacksmith.Workflow == "" && blacksmithCanFallbackToActionsWorkflow(cfg) {
 		return cfg.Actions.Job
 	}
 	return ""
@@ -191,10 +192,27 @@ func blacksmithRef(cfg Config) string {
 	if cfg.Blacksmith.Ref != "" {
 		return cfg.Blacksmith.Ref
 	}
-	if cfg.Blacksmith.Workflow == "" && strings.Contains(strings.ToLower(cfg.Actions.Workflow), "testbox") {
+	if cfg.Blacksmith.Workflow == "" && blacksmithCanFallbackToActionsWorkflow(cfg) {
 		return cfg.Actions.Ref
 	}
 	return ""
+}
+
+func blacksmithCanFallbackToActionsWorkflow(cfg Config) bool {
+	workflow := strings.TrimSpace(cfg.Actions.Workflow)
+	if workflow == "" {
+		return false
+	}
+	return !blacksmithLooksLikeGenericHydrateWorkflow(workflow)
+}
+
+func blacksmithLooksLikeGenericHydrateWorkflow(workflow string) bool {
+	name := strings.ToLower(strings.TrimSpace(filepath.Base(workflow)))
+	switch name {
+	case "hydrate", "hydrate.yml", "hydrate.yaml", "crabbox-hydrate", "crabbox-hydrate.yml", "crabbox-hydrate.yaml":
+		return true
+	}
+	return false
 }
 
 func blacksmithIdleTimeout(cfg Config) time.Duration {
