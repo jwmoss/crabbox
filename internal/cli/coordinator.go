@@ -1444,7 +1444,7 @@ func (c *CoordinatorClient) do(ctx context.Context, method, path string, body an
 		}
 	}
 	err = c.doHTTP(ctx, method, path, data, body != nil, out)
-	if err == nil || !isCoordinatorTransportError(err) {
+	if err == nil || !shouldUseCoordinatorCurlFallback(method, body != nil, err) {
 		return err
 	}
 	if curlErr := c.doCurl(ctx, method, path, data, body != nil, out); curlErr == nil {
@@ -1625,8 +1625,23 @@ func isCoordinatorTransportError(err error) bool {
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
 	var urlErr *url.Error
 	return errors.As(err, &urlErr)
+}
+
+func shouldUseCoordinatorCurlFallback(method string, hasBody bool, err error) bool {
+	if hasBody {
+		return false
+	}
+	switch method {
+	case http.MethodGet, http.MethodHead:
+		return isCoordinatorTransportError(err)
+	default:
+		return false
+	}
 }
 
 func localCoordinatorOwner() string {

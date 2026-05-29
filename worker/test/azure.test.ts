@@ -13,6 +13,7 @@ import {
   isRetryableDeleteError,
   isRetryableProvisioningError,
   preserveNonCrabboxRules,
+  summarizeAzureErrorBody,
 } from "../src/azure";
 import type { LeaseConfig } from "../src/config";
 import type { Env } from "../src/types";
@@ -128,6 +129,23 @@ describe("azure provider", () => {
     );
     expect(azureProvisioningErrorCategory("QuotaExceeded for cores")).toBe("quota");
     expect(azureProvisioningErrorCategory("NotAvailableForSubscription")).toBe("policy");
+  });
+
+  it("summarizes Azure error bodies before truncating", () => {
+    const longMessage = `The VM size is unavailable.\r\n${"extra ".repeat(140)}Try another size.`;
+    const body = JSON.stringify({
+      error: {
+        code: "OperationNotAllowed",
+        message: longMessage,
+        details: [{ code: "SkuRestriction", message: "Standard_B2s is restricted here." }],
+      },
+    });
+    const summary = summarizeAzureErrorBody(body);
+    expect(summary).toContain("OperationNotAllowed");
+    expect(summary).toContain("The VM size is unavailable.");
+    expect(summary).toContain("SkuRestriction: Standard_B2s is restricted here.");
+    expect(summary).not.toContain("\r");
+    expect(summary.length).toBeLessThanOrEqual(1003);
   });
 
   it("classifies transient Azure delete dependency errors as retryable", () => {

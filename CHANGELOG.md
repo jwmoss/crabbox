@@ -2,6 +2,10 @@
 
 ## 0.22.1 - Unreleased
 
+### Fixed
+
+- Fixed brokered lease creation diagnostics so long coordinator requests print progress, timed-out create requests do not retry non-idempotent POSTs through curl, and Azure ARM errors preserve the useful conflict message.
+
 ## 0.22.0 - 2026-05-29
 
 ### Added

@@ -1372,7 +1372,45 @@ function isAzureDefaultLinuxImage(image: string): boolean {
 
 async function safeBody(response: Response): Promise<string> {
   const text = await response.text();
-  return text.length > 500 ? `${text.slice(0, 500)}...` : text;
+  return summarizeAzureErrorBody(text);
+}
+
+export function summarizeAzureErrorBody(text: string): string {
+  const raw = text.trim();
+  if (!raw) return raw;
+  try {
+    const parsed = JSON.parse(raw) as {
+      error?: { code?: string; message?: string; details?: { code?: string; message?: string }[] };
+    };
+    const error = parsed.error;
+    if (error?.message) {
+      const details =
+        error.details
+          ?.map((detail) => [detail.code, detail.message].filter(Boolean).join(": "))
+          .filter(Boolean)
+          .join("; ") ?? "";
+      return truncateAzureBody(
+        [
+          error.code,
+          normalizeAzureBodyWhitespace(error.message),
+          normalizeAzureBodyWhitespace(details),
+        ]
+          .filter(Boolean)
+          .join(": "),
+      );
+    }
+  } catch {
+    // Fall back to the raw response body below.
+  }
+  return truncateAzureBody(normalizeAzureBodyWhitespace(raw));
+}
+
+function normalizeAzureBodyWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function truncateAzureBody(text: string): string {
+  return text.length > 1000 ? `${text.slice(0, 1000)}...` : text;
 }
 
 function sleep(ms: number): Promise<void> {

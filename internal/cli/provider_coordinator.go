@@ -41,7 +41,7 @@ func (b *coordinatorLeaseBackend) acquireOnce(ctx context.Context, keep bool, re
 	}
 	ensureAWSSSHCIDRs(ctx, &cfg)
 	fmt.Fprintf(b.rt.Stderr, "coordinator lease class=%s preferred_type=%s keep=%v slug=%s idle_timeout=%s ttl=%s\n", cfg.Class, cfg.ServerType, keep, slug, cfg.IdleTimeout, cfg.TTL)
-	lease, err := b.coord.CreateLease(ctx, cfg, publicKey, keep, leaseID, slug)
+	lease, err := b.createCoordinatorLeaseWithProgress(ctx, cfg, publicKey, keep, leaseID, slug)
 	if err != nil {
 		if isCoordinatorStaleInstanceCleanedSignal(err) {
 			return LeaseTarget{}, coordinatorStaleInstanceCleanedError{err: err}
@@ -85,6 +85,33 @@ func (b *coordinatorLeaseBackend) acquireOnce(ctx context.Context, keep bool, re
 	}
 	target = bootstrapTarget
 	return LeaseTarget{Server: server, SSH: target, LeaseID: leaseID, Coordinator: b.coord}, nil
+}
+
+type coordinatorCreateLeaseResult struct {
+	lease CoordinatorLease
+	err   error
+}
+
+func (b *coordinatorLeaseBackend) createCoordinatorLeaseWithProgress(ctx context.Context, cfg Config, publicKey string, keep bool, leaseID, slug string) (CoordinatorLease, error) {
+	resultCh := make(chan coordinatorCreateLeaseResult, 1)
+	go func() {
+		lease, err := b.coord.CreateLease(ctx, cfg, publicKey, keep, leaseID, slug)
+		resultCh <- coordinatorCreateLeaseResult{lease: lease, err: err}
+	}()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	started := time.Now()
+	for {
+		select {
+		case result := <-resultCh:
+			return result.lease, result.err
+		case <-ticker.C:
+			fmt.Fprintf(b.rt.Stderr, "waiting for coordinator lease provider=%s slug=%s elapsed=%s\n", cfg.Provider, slug, time.Since(started).Round(time.Second))
+		case <-ctx.Done():
+			return CoordinatorLease{}, ctx.Err()
+		}
+	}
 }
 
 func (b *coordinatorLeaseBackend) releaseStaleCoordinatorLeaseForRetry(leaseID string) bool {
