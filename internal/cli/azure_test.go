@@ -167,6 +167,19 @@ func TestAzureRegionCandidates(t *testing.T) {
 	}
 }
 
+func TestAzureSameLocation(t *testing.T) {
+	t.Parallel()
+	if !azureSameLocation(to.Ptr("eastus"), "eastus") {
+		t.Fatal("same compact location should match")
+	}
+	if !azureSameLocation(to.Ptr("West Europe"), "west europe") {
+		t.Fatal("same display-style location should match")
+	}
+	if azureSameLocation(to.Ptr("eastus"), "westus3") {
+		t.Fatal("different locations should not match")
+	}
+}
+
 func TestApplyAzureSpotCapacity(t *testing.T) {
 	t.Parallel()
 	props := &armcompute.VirtualMachineProperties{}

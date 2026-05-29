@@ -77,6 +77,11 @@ interface AzureSKU {
   capabilities?: { name?: string; value?: string }[];
 }
 
+interface AzureSharedInfraNames {
+  vnet: string;
+  nsg: string;
+}
+
 export class AzureClient {
   private readonly env: Env;
   private readonly tenant: string;
@@ -207,7 +212,7 @@ export class AzureClient {
     market: string;
     attempts?: ProvisioningAttempt[];
   }> {
-    await this.ensureSharedInfra(location, config);
+    const infra = await this.ensureSharedInfra(location, config);
     const candidates =
       config.serverTypeExplicit && config.serverType
         ? [config.serverType]
@@ -226,6 +231,7 @@ export class AzureClient {
           leaseID,
           slug,
           owner,
+          infra,
         );
         return attempts.length > 0
           ? { server, serverType: vmSize, market: config.capacityMarket, attempts }
@@ -253,6 +259,7 @@ export class AzureClient {
             leaseID,
             slug,
             owner,
+            infra,
           );
           return attempts.length > 0
             ? { server, serverType: vmSize, market: "on-demand", attempts }
@@ -329,7 +336,7 @@ export class AzureClient {
     }
   }
 
-  async ensureSharedInfra(location: string, config: LeaseConfig): Promise<void> {
+  async ensureSharedInfra(location: string, config: LeaseConfig): Promise<AzureSharedInfraNames> {
     const tags = { crabbox: "true", managed_by: "crabbox" };
     const rg = await this.arm<{ tags?: Record<string, string> }>(
       "GET",
@@ -349,9 +356,10 @@ export class AzureClient {
         tags,
       });
     }
-    const vnet = await this.arm<{ tags?: Record<string, string> }>(
+    const infra = await this.sharedInfraNamesForLocation(location);
+    const vnet = await this.arm<{ tags?: Record<string, string>; location?: string }>(
       "GET",
-      networkPath(this.resourceGroup, "virtualNetworks", this.vnet),
+      networkPath(this.resourceGroup, "virtualNetworks", infra.vnet),
       API_VERSIONS.network,
     ).catch((error) => {
       if (isNotFound(error)) return undefined;
@@ -359,12 +367,17 @@ export class AzureClient {
     });
     if (vnet) {
       if (vnet.tags?.["managed_by"] !== "crabbox") {
-        throw new Error(`azure vnet ${this.vnet} is not Crabbox-managed`);
+        throw new Error(`azure vnet ${infra.vnet} is not Crabbox-managed`);
+      }
+      if (!azureSameLocation(vnet.location, location)) {
+        throw new Error(
+          `azure vnet ${infra.vnet} exists in location ${vnet.location ?? ""}, not ${location}`,
+        );
       }
     } else {
       await this.arm(
         "PUT",
-        networkPath(this.resourceGroup, "virtualNetworks", this.vnet),
+        networkPath(this.resourceGroup, "virtualNetworks", infra.vnet),
         API_VERSIONS.network,
         {
           location,
@@ -378,24 +391,30 @@ export class AzureClient {
     }
     const nsg = await this.arm<{
       tags?: Record<string, string>;
+      location?: string;
       properties?: { securityRules?: AzureSecurityRule[] };
     }>(
       "GET",
-      networkPath(this.resourceGroup, "networkSecurityGroups", this.nsg),
+      networkPath(this.resourceGroup, "networkSecurityGroups", infra.nsg),
       API_VERSIONS.network,
     ).catch((error) => {
       if (isNotFound(error)) return undefined;
       throw error;
     });
     if (nsg && nsg.tags?.["managed_by"] !== "crabbox") {
-      throw new Error(`azure nsg ${this.nsg} is not Crabbox-managed`);
+      throw new Error(`azure nsg ${infra.nsg} is not Crabbox-managed`);
+    }
+    if (nsg && !azureSameLocation(nsg.location, location)) {
+      throw new Error(
+        `azure nsg ${infra.nsg} exists in location ${nsg.location ?? ""}, not ${location}`,
+      );
     }
     const preserved = preserveNonCrabboxRules(nsg?.properties?.securityRules ?? []);
     const usedPriorities = usedNSGPriorities(preserved);
     const rules = [...preserved, ...this.buildSSHRules(config, usedPriorities)];
     await this.arm(
       "PUT",
-      networkPath(this.resourceGroup, "networkSecurityGroups", this.nsg),
+      networkPath(this.resourceGroup, "networkSecurityGroups", infra.nsg),
       API_VERSIONS.network,
       {
         location,
@@ -403,6 +422,46 @@ export class AzureClient {
         properties: { securityRules: rules },
       },
     );
+    return infra;
+  }
+
+  private async sharedInfraNamesForLocation(location: string): Promise<AzureSharedInfraNames> {
+    let mismatch = false;
+    const vnet = await this.arm<{ tags?: Record<string, string>; location?: string }>(
+      "GET",
+      networkPath(this.resourceGroup, "virtualNetworks", this.vnet),
+      API_VERSIONS.network,
+    ).catch((error) => {
+      if (isNotFound(error)) return undefined;
+      throw error;
+    });
+    if (vnet) {
+      if (vnet.tags?.["managed_by"] !== "crabbox") {
+        throw new Error(`azure vnet ${this.vnet} is not Crabbox-managed`);
+      }
+      mismatch ||= !azureSameLocation(vnet.location, location);
+    }
+    const nsg = await this.arm<{ tags?: Record<string, string>; location?: string }>(
+      "GET",
+      networkPath(this.resourceGroup, "networkSecurityGroups", this.nsg),
+      API_VERSIONS.network,
+    ).catch((error) => {
+      if (isNotFound(error)) return undefined;
+      throw error;
+    });
+    if (nsg) {
+      if (nsg.tags?.["managed_by"] !== "crabbox") {
+        throw new Error(`azure nsg ${this.nsg} is not Crabbox-managed`);
+      }
+      mismatch ||= !azureSameLocation(nsg.location, location);
+    }
+    if (mismatch) {
+      return {
+        vnet: azureRegionalName(this.vnet, location),
+        nsg: azureRegionalName(this.nsg, location),
+      };
+    }
+    return { vnet: this.vnet, nsg: this.nsg };
   }
 
   private buildSSHRules(config: LeaseConfig, usedPriorities: Set<number>) {
@@ -435,10 +494,11 @@ export class AzureClient {
     leaseID: string,
     slug: string,
     owner: string,
+    infra: AzureSharedInfraNames,
   ): Promise<ProviderMachine> {
     const name = leaseProviderName(leaseID, slug);
     try {
-      return await this.createVMUnchecked(config, location, leaseID, slug, owner, name);
+      return await this.createVMUnchecked(config, location, leaseID, slug, owner, name, infra);
     } catch (error) {
       await this.deleteServer(name).catch(() => undefined);
       throw error;
@@ -452,6 +512,7 @@ export class AzureClient {
     slug: string,
     owner: string,
     name: string,
+    infra: AzureSharedInfraNames,
   ): Promise<ProviderMachine> {
     const tags = azureTagsFromLabels(
       leaseProviderLabels(config, leaseID, slug, owner, "azure", new Date(), {
@@ -469,8 +530,8 @@ export class AzureClient {
         properties: { publicIPAllocationMethod: "Static" },
       },
     );
-    const subnetID = `/subscriptions/${this.subscription}/resourceGroups/${this.resourceGroup}/providers/Microsoft.Network/virtualNetworks/${this.vnet}/subnets/${this.subnet}`;
-    const nsgID = `/subscriptions/${this.subscription}/resourceGroups/${this.resourceGroup}/providers/Microsoft.Network/networkSecurityGroups/${this.nsg}`;
+    const subnetID = `/subscriptions/${this.subscription}/resourceGroups/${this.resourceGroup}/providers/Microsoft.Network/virtualNetworks/${infra.vnet}/subnets/${this.subnet}`;
+    const nsgID = `/subscriptions/${this.subscription}/resourceGroups/${this.resourceGroup}/providers/Microsoft.Network/networkSecurityGroups/${infra.nsg}`;
     const pipID = `/subscriptions/${this.subscription}/resourceGroups/${this.resourceGroup}/providers/Microsoft.Network/publicIPAddresses/${name}-pip`;
     const nicID = `/subscriptions/${this.subscription}/resourceGroups/${this.resourceGroup}/providers/Microsoft.Network/networkInterfaces/${name}-nic`;
     await this.arm(
@@ -1235,13 +1296,22 @@ export function azureRegionCandidates(
 
 export function azureRegionalName(base: string, location: string): string {
   if (!base) return base;
-  const suffix = location
+  const suffix = azureLocationKey(location);
+  if (!suffix || base.toLowerCase().endsWith(`-${suffix}`)) return base;
+  return `${base}-${suffix}`;
+}
+
+function azureLocationKey(location: string): string {
+  return location
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/^-+|-+$/g, "");
-  if (!suffix || base.toLowerCase().endsWith(`-${suffix}`)) return base;
-  return `${base}-${suffix}`;
+}
+
+function azureSameLocation(existing: string | undefined, desired: string): boolean {
+  if (!existing || !desired.trim()) return true;
+  return azureLocationKey(existing) === azureLocationKey(desired);
 }
 
 export function azureProvisioningErrorCategory(message: string): string | undefined {

@@ -303,6 +303,9 @@ func (c *AzureClient) EnsureSharedInfra(ctx context.Context) error {
 	if err := c.ensureResourceGroup(ctx); err != nil {
 		return err
 	}
+	if err := c.regionalizeSharedInfraNamesForLocation(ctx); err != nil {
+		return err
+	}
 	if err := c.ensureVNet(ctx); err != nil {
 		return err
 	}
@@ -329,6 +332,33 @@ func azureManagedByCrabbox(tags map[string]*string) bool {
 
 func azureAdoptError(kind, name string) error {
 	return fmt.Errorf("azure %s %q exists but is not Crabbox-managed; either delete it, set tag managed_by=crabbox to adopt it, or use a different name", kind, name)
+}
+
+func azureLocationKey(location string) string {
+	return strings.Trim(strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			return r
+		}
+		if r >= 'A' && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		return '-'
+	}, strings.TrimSpace(location)), "-")
+}
+
+func azureSameLocation(existing *string, desired string) bool {
+	if existing == nil || strings.TrimSpace(desired) == "" {
+		return true
+	}
+	return azureLocationKey(*existing) == azureLocationKey(desired)
+}
+
+func azureSharedLocationError(kind, name string, existing *string, desired string) error {
+	location := ""
+	if existing != nil {
+		location = *existing
+	}
+	return fmt.Errorf("azure %s %q exists in location %q, not %q; use a region-scoped name such as %q", kind, name, location, desired, azureRegionalName(name, desired))
 }
 
 func preserveNonCrabboxRules(rules []*armnetwork.SecurityRule) []*armnetwork.SecurityRule {
@@ -365,11 +395,41 @@ func (c *AzureClient) ensureResourceGroup(ctx context.Context) error {
 	return nil
 }
 
+func (c *AzureClient) regionalizeSharedInfraNamesForLocation(ctx context.Context) error {
+	mismatch := false
+	existingVNet, err := c.vnetc.Get(ctx, c.ResourceGroup, c.VNet, nil)
+	if err == nil {
+		if !azureManagedByCrabbox(existingVNet.Tags) {
+			return azureAdoptError("virtual network", c.VNet)
+		}
+		mismatch = mismatch || !azureSameLocation(existingVNet.Location, c.Location)
+	} else if !isAzureNotFoundError(err) {
+		return fmt.Errorf("get vnet: %w", err)
+	}
+	existingNSG, err := c.sgc.Get(ctx, c.ResourceGroup, c.NSG, nil)
+	if err == nil {
+		if !azureManagedByCrabbox(existingNSG.Tags) {
+			return azureAdoptError("network security group", c.NSG)
+		}
+		mismatch = mismatch || !azureSameLocation(existingNSG.Location, c.Location)
+	} else if !isAzureNotFoundError(err) {
+		return fmt.Errorf("get nsg: %w", err)
+	}
+	if mismatch {
+		c.VNet = azureRegionalName(c.VNet, c.Location)
+		c.NSG = azureRegionalName(c.NSG, c.Location)
+	}
+	return nil
+}
+
 func (c *AzureClient) ensureVNet(ctx context.Context) error {
 	existing, err := c.vnetc.Get(ctx, c.ResourceGroup, c.VNet, nil)
 	if err == nil {
 		if !azureManagedByCrabbox(existing.Tags) {
 			return azureAdoptError("virtual network", c.VNet)
+		}
+		if !azureSameLocation(existing.Location, c.Location) {
+			return azureSharedLocationError("virtual network", c.VNet, existing.Location, c.Location)
 		}
 		return nil
 	}
@@ -406,6 +466,9 @@ func (c *AzureClient) ensureNSG(ctx context.Context) error {
 	if err == nil {
 		if !azureManagedByCrabbox(existing.Tags) {
 			return azureAdoptError("network security group", c.NSG)
+		}
+		if !azureSameLocation(existing.Location, c.Location) {
+			return azureSharedLocationError("network security group", c.NSG, existing.Location, c.Location)
 		}
 		if existing.Properties != nil {
 			existingRules = existing.Properties.SecurityRules

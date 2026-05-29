@@ -867,6 +867,118 @@ describe("azure provider", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it("uses regional shared network names when defaults already exist elsewhere", async () => {
+    const client = new AzureClient({ ...baseEnv, CRABBOX_AZURE_LOCATION: "westus3" });
+    let puts: string[] = [];
+    let nicBody:
+      | {
+          properties?: {
+            ipConfigurations?: Array<{ properties?: { subnet?: { id?: string } } }>;
+            networkSecurityGroup?: { id?: string };
+          };
+        }
+      | undefined;
+    const fakeFetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.toString();
+      const pathname = new URL(url).pathname;
+      if (isAzureLoginURL(url)) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ access_token: "tkn", expires_in: 3600 }), { status: 200 }),
+        );
+      }
+      if (pathname.endsWith("/resourceGroups/crabbox-leases")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ tags: { managed_by: "crabbox" } }), { status: 200 }),
+        );
+      }
+      if (
+        init?.method === "GET" &&
+        (pathname.endsWith("/virtualNetworks/crabbox-vnet") ||
+          pathname.endsWith("/networkSecurityGroups/crabbox-nsg"))
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              location: "eastus",
+              tags: { managed_by: "crabbox" },
+              properties: { securityRules: [] },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      if (
+        init?.method === "GET" &&
+        (pathname.endsWith("/virtualNetworks/crabbox-vnet-westus3") ||
+          pathname.endsWith("/networkSecurityGroups/crabbox-nsg-westus3"))
+      ) {
+        return Promise.resolve(new Response(JSON.stringify({ error: "missing" }), { status: 404 }));
+      }
+      if (init?.method === "PUT") puts.push(pathname);
+      if (
+        init?.method === "PUT" &&
+        pathname.includes("/networkInterfaces/") &&
+        pathname.endsWith("-nic")
+      ) {
+        nicBody = JSON.parse(String(init.body));
+      }
+      if (init?.method === "GET" && pathname.includes("/publicIPAddresses/")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ properties: { ipAddress: "192.0.2.10" } }), {
+            status: 200,
+          }),
+        );
+      }
+      if (init?.method === "GET" && pathname.includes("/virtualMachines/")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              name: pathname.split("/").pop() ?? "crabbox-blue-lobster",
+              tags: { crabbox: "true" },
+              properties: {
+                provisioningState: "Succeeded",
+                hardwareProfile: { vmSize: "Standard_D2ads_v6" },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    }) as typeof fetch;
+    client.fetcher = fakeFetch;
+
+    const infra = await client.ensureSharedInfra("westus3", testLeaseConfig());
+
+    expect(infra).toEqual({ vnet: "crabbox-vnet-westus3", nsg: "crabbox-nsg-westus3" });
+    expect(client.vnet).toBe("crabbox-vnet");
+    expect(client.nsg).toBe("crabbox-nsg");
+    expect(puts.some((path) => path.endsWith("/virtualNetworks/crabbox-vnet-westus3"))).toBe(true);
+    expect(puts.some((path) => path.endsWith("/networkSecurityGroups/crabbox-nsg-westus3"))).toBe(
+      true,
+    );
+
+    await client.createServerWithFallback(
+      testLeaseConfig({ azureLocation: "westus3", capacityMarket: "on-demand" }),
+      "cbx_123456789abc",
+      "blue-lobster",
+      "owner",
+    );
+
+    expect(nicBody?.properties?.ipConfigurations?.[0]?.properties?.subnet?.id).toContain(
+      "/virtualNetworks/crabbox-vnet-westus3/subnets/",
+    );
+    expect(nicBody?.properties?.networkSecurityGroup?.id).toContain(
+      "/networkSecurityGroups/crabbox-nsg-westus3",
+    );
+
+    puts = [];
+    await client.ensureSharedInfra("eastus", testLeaseConfig());
+
+    expect(puts.some((path) => path.endsWith("/networkSecurityGroups/crabbox-nsg"))).toBe(true);
+    expect(puts.some((path) => path.includes("crabbox-nsg-westus3-eastus"))).toBe(false);
+  });
+
   it("caches the client_credentials token across calls", async () => {
     const client = new AzureClient(baseEnv);
     let tokenMints = 0;
