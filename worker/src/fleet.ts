@@ -4563,6 +4563,10 @@ function legacyPromotedAWSImageKey(): string {
   return promotedAWSImagePrefix();
 }
 
+function legacyPromotedAWSImageCompatible(image: Pick<ProviderImage, "architecture">): boolean {
+  return !image.architecture || image.architecture === "x86_64";
+}
+
 function promotedAWSLinuxOSImageKey(image: Pick<ProviderImage, "architecture" | "os">): string {
   const architecture = image.architecture ?? awsImageArchitectureForTarget("linux", "");
   return `image:aws:promoted:linux:${architecture}:${sanitizePromotedAWSImageKeyPart(image.os ?? "")}`;
@@ -7364,7 +7368,11 @@ class AWSProvider implements CloudProvider {
     if (target === "linux" && promoted.os) {
       await this.storage.put(promotedAWSLinuxOSImageKey(promoted), promoted);
     }
-    if (target === "linux" && (!promoted.os || promoted.os === "ubuntu:24.04")) {
+    if (
+      target === "linux" &&
+      (!promoted.os || promoted.os === "ubuntu:24.04") &&
+      legacyPromotedAWSImageCompatible(promoted)
+    ) {
       await this.storage.put(legacyPromotedAWSImageKey(), promoted);
     }
     return { image: promoted };
@@ -7430,8 +7438,11 @@ class AWSProvider implements CloudProvider {
         return osScoped;
       }
     }
-    if (!config.os || config.os === "ubuntu:24.04") {
-      return this.storage.get<PromotedImageRecord>(legacyPromotedAWSImageKey());
+    if ((!config.os || config.os === "ubuntu:24.04") && architecture === "x86_64") {
+      const legacy = await this.storage.get<PromotedImageRecord>(legacyPromotedAWSImageKey());
+      if (legacy && legacyPromotedAWSImageCompatible(legacy)) {
+        return legacy;
+      }
     }
     return undefined;
   }

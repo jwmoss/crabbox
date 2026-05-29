@@ -360,7 +360,7 @@ describe("lease config", () => {
       sshPublicKey: "ssh-ed25519 test",
     });
     expect(config.architecture).toBe("arm64");
-    expect(config.serverType).toBe("Standard_D96ps_v6");
+    expect(config.serverType).toBe("Standard_D96pds_v6");
     expect(config.azureImage).toBe("Canonical:ubuntu-26_04-lts:server-arm64:latest");
   });
 

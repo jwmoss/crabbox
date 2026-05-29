@@ -226,13 +226,13 @@ func azureVMSizeCandidatesForArchitectureClass(architecture, class string) []str
 func azureARM64VMSizeCandidatesForClass(class string) []string {
 	switch class {
 	case "standard":
-		return []string{"Standard_D32ps_v6", "Standard_D32pds_v6", "Standard_D16ps_v6", "Standard_D16pds_v6"}
+		return []string{"Standard_D32pds_v6", "Standard_D32ps_v6", "Standard_D16pds_v6", "Standard_D16ps_v6"}
 	case "fast":
-		return []string{"Standard_D64ps_v6", "Standard_D64pds_v6", "Standard_D48ps_v6", "Standard_D48pds_v6", "Standard_D32ps_v6", "Standard_D32pds_v6"}
+		return []string{"Standard_D64pds_v6", "Standard_D64ps_v6", "Standard_D48pds_v6", "Standard_D48ps_v6", "Standard_D32pds_v6", "Standard_D32ps_v6"}
 	case "large":
-		return []string{"Standard_D96ps_v6", "Standard_D96pds_v6", "Standard_D64ps_v6", "Standard_D64pds_v6", "Standard_D48ps_v6", "Standard_D48pds_v6"}
+		return []string{"Standard_D96pds_v6", "Standard_D96ps_v6", "Standard_D64pds_v6", "Standard_D64ps_v6", "Standard_D48pds_v6", "Standard_D48ps_v6"}
 	case "beast":
-		return []string{"Standard_D96ps_v6", "Standard_D96pds_v6", "Standard_D64ps_v6", "Standard_D64pds_v6"}
+		return []string{"Standard_D96pds_v6", "Standard_D96ps_v6", "Standard_D64pds_v6", "Standard_D64ps_v6"}
 	default:
 		return []string{class}
 	}

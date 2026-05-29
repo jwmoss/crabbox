@@ -63,10 +63,10 @@ Linux ARM64 classes use Azure Cobalt Dpsv6/Dpdsv6 candidates and ARM64 Ubuntu
 Marketplace images:
 
 ```text
-standard  Standard_D32ps_v6, Standard_D32pds_v6, then 16-vCPU fallbacks
-fast      Standard_D64ps_v6, Standard_D64pds_v6, then 48/32-vCPU fallbacks
-large     Standard_D96ps_v6, Standard_D96pds_v6, then 64/48-vCPU fallbacks
-beast     Standard_D96ps_v6, Standard_D96pds_v6, then 64-vCPU fallbacks
+standard  Standard_D32pds_v6, Standard_D32ps_v6, then 16-vCPU fallbacks
+fast      Standard_D64pds_v6, Standard_D64ps_v6, then 48/32-vCPU fallbacks
+large     Standard_D96pds_v6, Standard_D96ps_v6, then 64/48-vCPU fallbacks
+beast     Standard_D96pds_v6, Standard_D96ps_v6, then 64-vCPU fallbacks
 ```
 
 Native Windows and WSL2 use a smaller scale, and the default candidates support

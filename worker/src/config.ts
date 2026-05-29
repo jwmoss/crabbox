@@ -648,27 +648,27 @@ export function azureVMSizeCandidatesForArchitectureClass(
 export function azureARM64VMSizeCandidatesForClass(machineClass: string): string[] {
   switch (machineClass) {
     case "standard":
-      return ["Standard_D32ps_v6", "Standard_D32pds_v6", "Standard_D16ps_v6", "Standard_D16pds_v6"];
+      return ["Standard_D32pds_v6", "Standard_D32ps_v6", "Standard_D16pds_v6", "Standard_D16ps_v6"];
     case "fast":
       return [
-        "Standard_D64ps_v6",
         "Standard_D64pds_v6",
-        "Standard_D48ps_v6",
+        "Standard_D64ps_v6",
         "Standard_D48pds_v6",
-        "Standard_D32ps_v6",
+        "Standard_D48ps_v6",
         "Standard_D32pds_v6",
+        "Standard_D32ps_v6",
       ];
     case "large":
       return [
-        "Standard_D96ps_v6",
         "Standard_D96pds_v6",
-        "Standard_D64ps_v6",
+        "Standard_D96ps_v6",
         "Standard_D64pds_v6",
-        "Standard_D48ps_v6",
+        "Standard_D64ps_v6",
         "Standard_D48pds_v6",
+        "Standard_D48ps_v6",
       ];
     case "beast":
-      return ["Standard_D96ps_v6", "Standard_D96pds_v6", "Standard_D64ps_v6", "Standard_D64pds_v6"];
+      return ["Standard_D96pds_v6", "Standard_D96ps_v6", "Standard_D64pds_v6", "Standard_D64ps_v6"];
     default:
       return [machineClass];
   }

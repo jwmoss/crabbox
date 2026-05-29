@@ -129,7 +129,7 @@ func TestAzureVMSizeCandidatesForClass(t *testing.T) {
 func TestAzureARM64VMSizeCandidatesForClass(t *testing.T) {
 	t.Parallel()
 	got := azureARM64VMSizeCandidatesForClass("beast")
-	want := []string{"Standard_D96ps_v6", "Standard_D96pds_v6", "Standard_D64ps_v6", "Standard_D64pds_v6"}
+	want := []string{"Standard_D96pds_v6", "Standard_D96ps_v6", "Standard_D64pds_v6", "Standard_D64ps_v6"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
@@ -158,7 +158,7 @@ func TestAzureVMSizeCandidatesForConfigHonorsARM64(t *testing.T) {
 	cfg.TargetOS = targetLinux
 	cfg.Architecture = ArchitectureARM64
 	cfg.architectureExplicit = true
-	if got := azureVMSizeCandidatesForConfig(cfg)[0]; got != "Standard_D96ps_v6" {
+	if got := azureVMSizeCandidatesForConfig(cfg)[0]; got != "Standard_D96pds_v6" {
 		t.Fatalf("first arm64 size=%q", got)
 	}
 }
