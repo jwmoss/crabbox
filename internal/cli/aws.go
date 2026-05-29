@@ -1158,9 +1158,10 @@ func awsRecommendedClassForQuota(cfg Config, limitVCPUs int) (string, string) {
 	if limitVCPUs <= 0 {
 		return "", ""
 	}
+	architecture := effectiveArchitectureForConfig(cfg)
 	classes := []string{"beast", "large", "fast", "standard"}
 	for _, class := range classes {
-		candidates := awsInstanceTypeCandidatesForTargetModeClass(cfg.TargetOS, cfg.WindowsMode, class)
+		candidates := awsInstanceTypeCandidatesForTargetModeArchitectureClass(cfg.TargetOS, cfg.WindowsMode, architecture, class)
 		if len(candidates) == 0 {
 			continue
 		}
@@ -1168,7 +1169,7 @@ func awsRecommendedClassForQuota(cfg Config, limitVCPUs int) (string, string) {
 			return class, candidates[0]
 		}
 	}
-	for _, serverType := range awsInstanceTypeCandidatesForTargetModeClass(cfg.TargetOS, cfg.WindowsMode, "standard") {
+	for _, serverType := range awsInstanceTypeCandidatesForTargetModeArchitectureClass(cfg.TargetOS, cfg.WindowsMode, architecture, "standard") {
 		if awsInstanceTypeVCPUs(serverType) <= limitVCPUs {
 			return "standard", serverType
 		}
