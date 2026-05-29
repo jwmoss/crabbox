@@ -412,6 +412,18 @@ func resolveIsloLeaseID(id, repoRoot string, reclaim bool) (string, string, stri
 	if id == "" {
 		return "", "", "", exit(2, "provider=islo requires a Crabbox-created sandbox name, lease id, or slug")
 	}
+	if strings.HasPrefix(id, isloLeasePrefix) {
+		name := strings.TrimPrefix(id, isloLeasePrefix)
+		if !isCrabboxIsloSandboxName(name) {
+			return "", "", "", exit(4, "islo lease %q is not a Crabbox-owned sandbox", id)
+		}
+		if claim, ok, err := resolveExactIsloLeaseClaim(id); err != nil {
+			return "", "", "", err
+		} else if ok {
+			return claim.LeaseID, name, blank(claim.Slug, newLeaseSlug(claim.LeaseID)), nil
+		}
+		return id, name, newLeaseSlug(id), nil
+	}
 	if claim, ok, err := resolveIsloClaim(id); err != nil {
 		return "", "", "", err
 	} else if ok {
@@ -422,18 +434,22 @@ func resolveIsloLeaseID(id, repoRoot string, reclaim bool) (string, string, stri
 		}
 		return claim.LeaseID, strings.TrimPrefix(claim.LeaseID, isloLeasePrefix), blank(claim.Slug, newLeaseSlug(claim.LeaseID)), nil
 	}
-	if strings.HasPrefix(id, isloLeasePrefix) {
-		name := strings.TrimPrefix(id, isloLeasePrefix)
-		if !isCrabboxIsloSandboxName(name) {
-			return "", "", "", exit(4, "islo lease %q is not a Crabbox-owned sandbox", id)
-		}
-		return id, name, newLeaseSlug(id), nil
-	}
 	if !isCrabboxIsloSandboxName(id) {
 		return "", "", "", exit(4, "islo sandbox %q is not claimed by Crabbox; use a Crabbox slug or %s<crabbox-sandbox-name>", id, isloLeasePrefix)
 	}
 	leaseID := isloLeasePrefix + id
 	return leaseID, id, newLeaseSlug(leaseID), nil
+}
+
+func resolveExactIsloLeaseClaim(leaseID string) (core.LeaseClaim, bool, error) {
+	claim, ok, err := resolveLeaseClaim(leaseID)
+	if err != nil {
+		return claim, ok, err
+	}
+	if ok && claim.Provider == isloProvider && claim.LeaseID == leaseID {
+		return claim, true, nil
+	}
+	return core.LeaseClaim{}, false, nil
 }
 
 func isloCleanupCommand(leaseID string) string {

@@ -157,6 +157,13 @@ func TestResolveIsloLeaseIDIgnoresSyntheticSlugCollision(t *testing.T) {
 	if leaseID != "isb_crabbox-repo-abcdef" || name != "crabbox-repo-abcdef" || slug == "isb-crabbox-repo-abcdef" {
 		t.Fatalf("lease=%q name=%q slug=%q", leaseID, name, slug)
 	}
+	leaseID, name, slug, err = resolveIsloLeaseID("isb_crabbox-repo-abcdef", root, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leaseID != "isb_crabbox-repo-abcdef" || name != "crabbox-repo-abcdef" || slug == "isb-crabbox-repo-abcdef" {
+		t.Fatalf("explicit lease=%q name=%q slug=%q", leaseID, name, slug)
+	}
 }
 
 func TestIsloCleanupCommandQuotesLeaseID(t *testing.T) {
