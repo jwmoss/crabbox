@@ -19,7 +19,7 @@ type api interface {
 	PrepareSSH(context.Context, string) error
 	GetBox(context.Context, string) (boxData, error)
 	ListBoxes(context.Context) ([]boxData, error)
-	DeleteBox(context.Context, string) error
+	StopBox(context.Context, string) error
 }
 
 type client struct {
@@ -131,10 +131,10 @@ func (c *client) ListBoxes(ctx context.Context) ([]boxData, error) {
 	return decodeBoxes([]byte(result.Stdout))
 }
 
-func (c *client) DeleteBox(ctx context.Context, id string) error {
-	result, err := c.run(ctx, "delete", id)
+func (c *client) StopBox(ctx context.Context, id string) error {
+	result, err := c.run(ctx, "stop", id)
 	if err != nil {
-		return fmt.Errorf("ascii-box CLI delete failed: %s", c.formatError(result, err))
+		return fmt.Errorf("ascii-box CLI stop failed: %s", c.formatError(result, err))
 	}
 	return nil
 }

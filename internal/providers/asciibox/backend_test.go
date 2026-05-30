@@ -62,7 +62,7 @@ func TestClientUsesOfficialAsciiBoxCLI(t *testing.T) {
 	if boxes, err := client.ListBoxes(context.Background()); err != nil || len(boxes) != 1 {
 		t.Fatalf("boxes=%#v err=%v", boxes, err)
 	}
-	if err := client.DeleteBox(context.Background(), "bx_1"); err != nil {
+	if err := client.StopBox(context.Background(), "bx_1"); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
@@ -75,7 +75,7 @@ func TestClientUsesOfficialAsciiBoxCLI(t *testing.T) {
 		"box --no-update --json config",
 		"box --no-update --json --api-url https://ascii.dev list",
 		"box --no-update --json config",
-		"box --no-update --json --api-url https://ascii.dev delete bx_1",
+		"box --no-update --json --api-url https://ascii.dev stop bx_1",
 	}
 	if !reflect.DeepEqual(runner.commands, want) {
 		t.Fatalf("commands=%v want=%v", runner.commands, want)
@@ -336,7 +336,7 @@ func (f *fakeAPI) ListBoxes(context.Context) ([]boxData, error) {
 	return []boxData{f.box}, nil
 }
 
-func (f *fakeAPI) DeleteBox(_ context.Context, id string) error {
+func (f *fakeAPI) StopBox(_ context.Context, id string) error {
 	f.deletedIDs = append(f.deletedIDs, id)
 	return nil
 }
@@ -380,7 +380,7 @@ func (r *fakeCommandRunner) Run(_ context.Context, req LocalCommandRequest) (Loc
 		return LocalCommandResult{Stdout: out}, nil
 	case strings.Contains(joined, " list"):
 		return LocalCommandResult{Stdout: `{"boxes":[{"id":"bx_1","state":"ready","ip":"203.0.113.10"}]}`}, nil
-	case strings.Contains(joined, " delete bx_1"):
+	case strings.Contains(joined, " stop bx_1"):
 		return LocalCommandResult{Stdout: `{"id":"bx_1","status":"deleted"}`}, nil
 	default:
 		return LocalCommandResult{Stderr: "unexpected command"}, fmt.Errorf("unexpected command")
