@@ -310,6 +310,7 @@ export class AzureClient {
             // oxlint-disable-next-line eslint/no-await-in-loop -- shared infra is created once, after config validation.
             infra = await this.ensureSharedInfra(location, config);
           }
+          // oxlint-disable-next-line eslint/no-await-in-loop -- market fallback must preserve ordered capacity preference.
           const server = await this.createVM(
             nextConfig,
             location,
