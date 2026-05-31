@@ -97,6 +97,7 @@ crabbox job run full-ci
 
 # or warm a box once, then reuse it
 crabbox warmup                                       # prints cbx_... + a slug
+crabbox prewarm                                      # lease + Actions hydration
 crabbox run --id blue-lobster -- pnpm test:changed
 crabbox ssh --id blue-lobster
 crabbox stop blue-lobster
@@ -156,8 +157,10 @@ and authoring guide.
 ## Highlights
 
 - **One-shot or warm workspaces.** `crabbox run` for fire-and-forget;
-  `crabbox warmup` + `--id` for repeated runs against the same box. See
-  [warmup](docs/commands/warmup.md) and [run](docs/commands/run.md).
+  `crabbox warmup` + `--id` for raw reusable leases, or `crabbox prewarm` when
+  the box should be hydrated before the first test command. See
+  [warmup](docs/commands/warmup.md), [prewarm](docs/commands/prewarm.md), and
+  [run](docs/commands/run.md).
 - **Named repo jobs.** `crabbox job run <name>` lets repos define warmup,
   optional Actions hydration, run command, and cleanup policy in `.crabbox.yaml`.
   See [Jobs](docs/features/jobs.md).
@@ -212,7 +215,7 @@ and authoring guide.
   autonomous work reviewable instead of only ephemeral terminal output. See
   [Artifacts](docs/features/artifacts.md) and
   [Telemetry](docs/features/telemetry.md).
-- **Stable timing records.** `--timing-json` on `run`, `warmup`, and
+- **Stable timing records.** `--timing-json` on `run`, `warmup`, `prewarm`, and
   `actions hydrate` gives scripts one machine-readable sync/command/total
   timing schema across providers.
 - **Hardened coordinator auth.** GitHub browser login, owner-scoped leases,

@@ -1762,6 +1762,7 @@ func applyFileConfig(cfg *Config, file fileConfig) error {
 	}
 	if file.ServerType != "" {
 		cfg.ServerType = file.ServerType
+		cfg.ServerTypeExplicit = true
 	}
 	if file.Coordinator != "" {
 		cfg.Coordinator = file.Coordinator

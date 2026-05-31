@@ -299,10 +299,10 @@ func nextWebVNCBridgeFailure(connectedOnce bool, attempt int) (int, string) {
 
 func (a App) webVNCDaemonCommand(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return exit(2, "usage: crabbox webvnc daemon start|status|stop --id <lease-id-or-slug>")
+		return exit(2, "usage: crabbox webvnc daemon start|status|stop|list --id <lease-id-or-slug>")
 	}
 	if isHelpArg(args[0]) {
-		fmt.Fprintln(a.Stdout, "Usage: crabbox webvnc daemon start|status|stop --id <lease-id-or-slug>")
+		fmt.Fprintln(a.Stdout, "Usage: crabbox webvnc daemon start|status|stop|list --id <lease-id-or-slug>")
 		return nil
 	}
 	switch args[0] {
@@ -312,8 +312,10 @@ func (a App) webVNCDaemonCommand(ctx context.Context, args []string) error {
 		return a.webVNCDaemonStatusCommand(args[1:])
 	case "stop":
 		return a.webVNCDaemonStopCommand(args[1:])
+	case "list", "ls":
+		return a.webVNCDaemonListCommand(args[1:])
 	default:
-		return exit(2, "usage: crabbox webvnc daemon start|status|stop --id <lease-id-or-slug>")
+		return exit(2, "usage: crabbox webvnc daemon start|status|stop|list --id <lease-id-or-slug>")
 	}
 }
 
@@ -401,6 +403,47 @@ func (a App) webVNCDaemonStopCommand(args []string) error {
 		return exit(2, "usage: crabbox webvnc daemon stop --id <lease-id-or-slug>")
 	}
 	return a.stopWebVNCDaemon(*id)
+}
+
+func (a App) webVNCDaemonListCommand(args []string) error {
+	fs := newFlagSet("webvnc daemon list", a.Stderr)
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return exit(2, "usage: crabbox webvnc daemon list")
+	}
+	dir, err := crabboxStateDir()
+	if err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(filepath.Join(dir, "webvnc"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintln(a.Stdout, "webvnc daemon: none")
+			return nil
+		}
+		return err
+	}
+	count := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".pid") {
+			continue
+		}
+		leaseID := strings.TrimSuffix(name, ".pid")
+		status, err := localWebVNCDaemonStatus(leaseID)
+		if err != nil {
+			fmt.Fprintf(a.Stdout, "webvnc daemon: %s error=%v\n", leaseID, err)
+		} else {
+			printLocalWebVNCDaemonStatus(a.Stdout, status)
+		}
+		count++
+	}
+	if count == 0 {
+		fmt.Fprintln(a.Stdout, "webvnc daemon: none")
+	}
+	return nil
 }
 
 func (a App) webVNCStatusCommand(ctx context.Context, args []string) error {

@@ -18,6 +18,7 @@ type crabboxKongCLI struct {
 	Whoami     whoamiKongCmd     `cmd:"" passthrough:"" help:"Show broker identity."`
 	Doctor     doctorKongCmd     `cmd:"" passthrough:"" help:"Check local and broker/provider readiness."`
 	Warmup     warmupKongCmd     `cmd:"" passthrough:"" help:"Lease a box and wait until it is ready."`
+	Prewarm    prewarmKongCmd    `cmd:"" passthrough:"" help:"Lease and hydrate a reusable test-ready box."`
 	Run        runKongCmd        `cmd:"" passthrough:"" help:"Sync the repo, run a remote command, stream output."`
 	Job        jobKongCmd        `cmd:"" help:"Run named repo-local Crabbox jobs."`
 	Desktop    desktopKongCmd    `cmd:"" help:"Launch apps into a visible desktop session."`
@@ -141,6 +142,9 @@ type doctorKongCmd struct {
 	Args []string `arg:"" optional:""`
 }
 type warmupKongCmd struct {
+	Args []string `arg:"" optional:""`
+}
+type prewarmKongCmd struct {
 	Args []string `arg:"" optional:""`
 }
 type runKongCmd struct {
@@ -507,6 +511,7 @@ func (c *logoutKongCmd) Run(ctx context.Context, app App) error    { return app.
 func (c *whoamiKongCmd) Run(ctx context.Context, app App) error    { return app.whoami(ctx, c.Args) }
 func (c *doctorKongCmd) Run(ctx context.Context, app App) error    { return app.doctor(ctx, c.Args) }
 func (c *warmupKongCmd) Run(ctx context.Context, app App) error    { return app.warmup(ctx, c.Args) }
+func (c *prewarmKongCmd) Run(ctx context.Context, app App) error   { return app.prewarm(ctx, c.Args) }
 func (c *runKongCmd) Run(ctx context.Context, app App) error       { return app.runCommand(ctx, c.Args) }
 func (c *jobListKongCmd) Run(ctx context.Context, app App) error   { return app.jobList(ctx, c.Args) }
 func (c *jobRunKongCmd) Run(ctx context.Context, app App) error    { return app.jobRun(ctx, c.Args) }

@@ -62,6 +62,8 @@ func (a App) directCommandHelp(ctx context.Context, args []string) (error, bool)
 		return a.doctor(ctx, helpArgs), true
 	case "warmup":
 		return a.warmup(ctx, helpArgs), true
+	case "prewarm":
+		return a.prewarm(ctx, helpArgs), true
 	case "run":
 		return a.runCommand(ctx, helpArgs), true
 	case "job":
@@ -135,6 +137,8 @@ Start Here:
       Add repo-local Crabbox config, GitHub workflow, and agent skill.
   crabbox warmup --class beast
       Lease a reusable box and print a cbx_... id plus friendly slug.
+  crabbox prewarm
+      Lease a reusable box and hydrate it from configured GitHub Actions.
   crabbox run --id blue-lobster -- pnpm test:changed
       Sync this checkout to the box and run a command.
   crabbox warmup --desktop --browser --code
@@ -147,6 +151,7 @@ Commands:
   whoami      Show broker identity
   doctor      Check local and broker/provider readiness
   warmup      Lease a box and wait until it is ready
+  prewarm     Lease and hydrate a reusable test-ready box
   run         Sync the repo, run a remote command, stream output
   job         Run named repo-local Crabbox jobs
   desktop     Launch apps into a visible desktop session

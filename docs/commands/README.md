@@ -14,6 +14,7 @@ same order as the CLI help.
 - [whoami](whoami.md)
 - [doctor](doctor.md)
 - [warmup](warmup.md)
+- [prewarm](prewarm.md)
 - [run](run.md)
 - [job](job.md)
 - [desktop](desktop.md)

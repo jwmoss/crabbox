@@ -1454,6 +1454,32 @@ func TestProviderAliasCanonicalizedBeforeDefaults(t *testing.T) {
 	}
 }
 
+func TestConfigFileServerTypeIsExplicit(t *testing.T) {
+	clearConfigEnv(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("CRABBOX_CONFIG", "")
+	path := userConfigPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("provider: gcp\nserverType: c4-standard-192\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ServerType != "c4-standard-192" || !cfg.ServerTypeExplicit {
+		t.Fatalf("serverType=%q explicit=%t, want explicit c4-standard-192", cfg.ServerType, cfg.ServerTypeExplicit)
+	}
+	if largeDefaultServerType(cfg) {
+		t.Fatalf("explicit config serverType should not warn as a large default")
+	}
+}
+
 func TestInvalidNetworkConfigFails(t *testing.T) {
 	clearConfigEnv(t)
 	home := t.TempDir()
