@@ -1360,20 +1360,27 @@ func webVNCBridgeCapabilities(ctx context.Context, target SSHTarget) string {
 	if target.TargetOS != "" && target.TargetOS != targetLinux {
 		return ""
 	}
-	out, err := runSSHCombinedOutput(ctx, target, `set -eu
+	out, err := runSSHCombinedOutput(ctx, target, webVNCDesktopThemeCapabilityCommand())
+	if err != nil || strings.TrimSpace(out) != "" {
+		return ""
+	}
+	return "desktop_theme"
+}
+
+func webVNCDesktopThemeCapabilityCommand() string {
+	return `set -eu
 if [ -x /usr/local/bin/crabbox-configure-desktop-theme ] && grep -q 'desktop-theme' /usr/local/bin/crabbox-configure-desktop-theme; then
   exit 0
 fi
 if [ -x /usr/local/bin/crabbox-start-desktop ] && grep -q 'desktop-theme' /usr/local/bin/crabbox-start-desktop; then
   exit 0
 fi
+if [ -f /var/lib/crabbox/desktop.env ] && grep -q '^CRABBOX_DESKTOP_ENV=gnome$' /var/lib/crabbox/desktop.env; then
+  exit 0
+fi
 echo "desktop theme helper does not support dynamic themes" >&2
 exit 1
-`)
-	if err != nil || strings.TrimSpace(out) != "" {
-		return ""
-	}
-	return "desktop_theme"
+`
 }
 
 type webVNCBridgeControlMessage struct {
@@ -1441,14 +1448,96 @@ func webVNCDesktopThemeCommand(theme, user string) string {
 		user = "crabbox"
 	}
 	return "set -eu\n" +
-		"if command -v /usr/local/bin/crabbox-configure-desktop-theme >/dev/null 2>&1; then\n" +
+		"if [ -f /var/lib/crabbox/desktop.env ] && grep -q '^CRABBOX_DESKTOP_ENV=gnome$' /var/lib/crabbox/desktop.env; then\n" +
+		webVNCGNOMEDesktopThemeFallbackCommand(theme, user) +
+		"elif command -v /usr/local/bin/crabbox-configure-desktop-theme >/dev/null 2>&1 && grep -q 'desktop-theme' /usr/local/bin/crabbox-configure-desktop-theme; then\n" +
 		"  env DISPLAY=:99 CRABBOX_DESKTOP_USER=" + shellQuote(user) + " /usr/local/bin/crabbox-configure-desktop-theme " + shellQuote(theme) + "\n" +
-		"elif command -v /usr/local/bin/crabbox-start-desktop >/dev/null 2>&1; then\n" +
+		"elif command -v /usr/local/bin/crabbox-start-desktop >/dev/null 2>&1 && grep -q 'desktop-theme' /usr/local/bin/crabbox-start-desktop; then\n" +
 		"  sudo env DISPLAY=:99 CRABBOX_SSH_USER=" + shellQuote(user) + " /usr/local/bin/crabbox-start-desktop " + shellQuote(theme) + "\n" +
 		"else\n" +
 		"  echo 'crabbox desktop theme helper not installed' >&2\n" +
 		"  exit 127\n" +
 		"fi\n"
+}
+
+func webVNCGNOMEDesktopThemeFallbackCommand(theme, user string) string {
+	return "  theme=" + shellQuote(theme) + "\n" +
+		"  user=" + shellQuote(user) + "\n" +
+		`  home_dir="$(getent passwd "$user" | cut -d: -f6)"
+  if [ -z "$home_dir" ]; then
+    home_dir="/home/$user"
+  fi
+  config_dir="$home_dir/.config"
+  case "$theme" in
+    light)
+      gtk_theme=Adwaita
+      gtk_prefer_dark_ini=0
+      gsettings_scheme=prefer-light
+      terminal_fg="#1f2937"
+      terminal_bg="#f8fafc"
+      ;;
+    *)
+      theme=dark
+      gtk_theme=Adwaita-dark
+      gtk_prefer_dark_ini=1
+      gsettings_scheme=prefer-dark
+      terminal_fg="#e5e7eb"
+      terminal_bg="#000000"
+      ;;
+  esac
+  mkdir -p "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0"
+  chmod 0700 "$config_dir" "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0" 2>/dev/null || true
+  printf '%s\n' "$theme" > "$config_dir/crabbox/desktop-theme"
+  for gtk_dir in "$config_dir/gtk-3.0" "$config_dir/gtk-4.0"; do
+    cat > "$gtk_dir/settings.ini" <<EOF
+[Settings]
+gtk-theme-name=$gtk_theme
+gtk-icon-theme-name=Adwaita
+gtk-application-prefer-dark-theme=$gtk_prefer_dark_ini
+EOF
+  done
+  cat > "$home_dir/.gtkrc-2.0" <<EOF
+gtk-theme-name="$gtk_theme"
+gtk-icon-theme-name="Adwaita"
+gtk-application-prefer-dark-theme=$gtk_prefer_dark_ini
+EOF
+  . /var/lib/crabbox/desktop.env
+  display="${DISPLAY:-:0}"
+  runtime="${XDG_RUNTIME_DIR:-/tmp/crabbox-runtime-$(id -u "$user")}"
+  dbus_address="${DBUS_SESSION_BUS_ADDRESS:-}"
+  if [ -z "$dbus_address" ]; then
+    labwc_pid="$(pgrep -u "$user" -n -x labwc 2>/dev/null || true)"
+    if [ -n "$labwc_pid" ] && [ -r "/proc/$labwc_pid/environ" ]; then
+      dbus_address="$(tr '\0' '\n' < "/proc/$labwc_pid/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p' | head -n1)"
+    fi
+  fi
+  if command -v gsettings >/dev/null 2>&1; then
+    DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings set org.gnome.desktop.interface color-scheme "$gsettings_scheme" >/dev/null 2>&1 || true
+    DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings set org.gnome.desktop.interface gtk-theme "$gtk_theme" >/dev/null 2>&1 || true
+    profiles="$(DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings get org.gnome.Terminal.ProfilesList list 2>/dev/null | tr -d "[],'" || true)"
+    default_profile="$(DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings get org.gnome.Terminal.ProfilesList default 2>/dev/null | tr -d "'" || true)"
+    if [ -n "$default_profile" ] && ! printf ' %s ' "$profiles" | grep -q " $default_profile "; then
+      profiles="$profiles $default_profile"
+    fi
+    for profile in $profiles; do
+      [ -n "$profile" ] || continue
+      profile_path="/org/gnome/terminal/legacy/profiles:/:$profile/"
+      DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings set "org.gnome.Terminal.Legacy.Profile:$profile_path" use-theme-colors false >/dev/null 2>&1 || true
+      DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings set "org.gnome.Terminal.Legacy.Profile:$profile_path" foreground-color "$terminal_fg" >/dev/null 2>&1 || true
+      DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings set "org.gnome.Terminal.Legacy.Profile:$profile_path" background-color "$terminal_bg" >/dev/null 2>&1 || true
+      DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings set "org.gnome.Terminal.Legacy.Profile:$profile_path" use-transparent-background false >/dev/null 2>&1 || true
+    done
+  fi
+  if pgrep -u "$user" -x gnome-panel >/dev/null 2>&1; then
+    pkill -TERM -u "$user" -x gnome-panel >/dev/null 2>&1 || true
+    DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 GTK_THEME="$gtk_theme" nohup gnome-panel >/tmp/crabbox-gnome-panel.log 2>&1 &
+  fi
+  previous_terminal_theme="$(cat "$config_dir/crabbox/gnome-terminal-theme" 2>/dev/null || true)"
+  printf '%s\n' "$theme" > "$config_dir/crabbox/gnome-terminal-theme"
+  if [ "$theme" = dark ] && command -v gnome-terminal >/dev/null 2>&1 && { [ "$previous_terminal_theme" != "$theme" ] || ! pgrep -u "$user" -f '/gnome-terminal-server' >/dev/null 2>&1; }; then
+    (sleep 0.4; DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 GTK_THEME="$gtk_theme" NO_AT_BRIDGE=1 gnome-terminal -- bash -l >/tmp/crabbox-gnome-terminal.log 2>&1 &) >/dev/null 2>&1 &
+  fi
+`
 }
 
 func copyTCPToWebSocket(ctx context.Context, ws *websocket.Conn, tcp net.Conn) error {
