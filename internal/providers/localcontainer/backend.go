@@ -1231,18 +1231,28 @@ if [ "$mode" = "light" ]; then
   gsettings_scheme=prefer-light
   terminal_fg="#1f2937"
   terminal_bg="#f8fafc"
+  labwc_title_bg="#f3f4f6"
+  labwc_title_fg="#111827"
+  labwc_inactive_title_bg="#e5e7eb"
+  labwc_inactive_title_fg="#374151"
+  labwc_border="#cbd5e1"
 else
   gtk_theme=Adwaita-dark
   gtk_prefer_dark_ini=1
   gsettings_scheme=prefer-dark
   terminal_fg="#e5e7eb"
   terminal_bg="#000000"
+  labwc_title_bg="#1f2329"
+  labwc_title_fg="#e5e7eb"
+  labwc_inactive_title_bg="#111827"
+  labwc_inactive_title_fg="#9ca3af"
+  labwc_border="#30363d"
 fi
 if [ "$(id -u)" -eq 0 ]; then
   install -d -m 0700 -o "$user" "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0"
 else
-  mkdir -p "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0"
-  chmod 0700 "$config_dir" "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0"
+  mkdir -p "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0" "$config_dir/labwc"
+  chmod 0700 "$config_dir" "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0" "$config_dir/labwc"
 fi
 printf '%s\n' "$mode" > "$config_dir/crabbox/desktop-theme"
 for gtk_dir in "$config_dir/gtk-3.0" "$config_dir/gtk-4.0"; do
@@ -1288,6 +1298,29 @@ set_gnome_terminal_theme() {
     gsettings set "org.gnome.Terminal.Legacy.Profile:$profile_path" use-transparent-background false >/dev/null 2>&1 || true
   done
 }
+set_labwc_theme() {
+  mkdir -p "$config_dir/labwc"
+  cat > "$config_dir/labwc/themerc-override" <<EOF
+window.active.title.bg.color: $labwc_title_bg
+window.active.label.text.color: $labwc_title_fg
+window.inactive.title.bg.color: $labwc_inactive_title_bg
+window.inactive.label.text.color: $labwc_inactive_title_fg
+window.active.border.color: $labwc_border
+window.inactive.border.color: $labwc_border
+window.active.button.unpressed.image.color: $labwc_title_fg
+window.inactive.button.unpressed.image.color: $labwc_inactive_title_fg
+window.active.button.hover.image.color: $labwc_title_fg
+window.inactive.button.hover.image.color: $labwc_inactive_title_fg
+window.active.button.pressed.image.color: $labwc_title_fg
+window.inactive.button.pressed.image.color: $labwc_inactive_title_fg
+EOF
+  if command -v labwc >/dev/null 2>&1; then
+    labwc_pid="$(pgrep -u "$user" -n -x labwc 2>/dev/null || true)"
+    if [ -n "$labwc_pid" ]; then
+      LABWC_PID="$labwc_pid" XDG_RUNTIME_DIR="$runtime" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}" labwc --reconfigure >/dev/null 2>&1 || kill -HUP "$labwc_pid" >/dev/null 2>&1 || true
+    fi
+  fi
+}
 target_uid="$(id -u "$user" 2>/dev/null || printf 0)"
 if [ "$(id -u)" -eq 0 ] && [ "$target_uid" -ne 0 ]; then
   su "$user" -s /bin/sh -c "CRABBOX_DESKTOP_USER='$user' CRABBOX_DESKTOP_THEME='$mode' DISPLAY='$display' XDG_RUNTIME_DIR='$runtime' DBUS_SESSION_BUS_ADDRESS='$dbus_address' GDK_BACKEND=x11 /usr/local/bin/crabbox-configure-desktop-theme '$mode'" || true
@@ -1303,6 +1336,7 @@ if command -v gsettings >/dev/null 2>&1; then
     DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 set_gnome_terminal_theme
   fi
 fi
+set_labwc_theme
 if [ "$(id -u)" -eq 0 ] && pgrep -u "$user" -x gnome-panel >/dev/null 2>&1; then
   pkill -TERM -u "$user" -x gnome-panel >/dev/null 2>&1 || true
   su "$user" -s /bin/sh -c "DISPLAY='$display' XDG_RUNTIME_DIR='$runtime' DBUS_SESSION_BUS_ADDRESS='$dbus_address' GDK_BACKEND=x11 GTK_THEME='$gtk_theme' nohup gnome-panel >/tmp/crabbox-gnome-panel.log 2>&1 &" >/dev/null 2>&1 || true

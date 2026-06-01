@@ -1475,6 +1475,11 @@ func webVNCGNOMEDesktopThemeFallbackCommand(theme, user string) string {
       gsettings_scheme=prefer-light
       terminal_fg="#1f2937"
       terminal_bg="#f8fafc"
+      labwc_title_bg="#f3f4f6"
+      labwc_title_fg="#111827"
+      labwc_inactive_title_bg="#e5e7eb"
+      labwc_inactive_title_fg="#374151"
+      labwc_border="#cbd5e1"
       ;;
     *)
       theme=dark
@@ -1483,10 +1488,15 @@ func webVNCGNOMEDesktopThemeFallbackCommand(theme, user string) string {
       gsettings_scheme=prefer-dark
       terminal_fg="#e5e7eb"
       terminal_bg="#000000"
+      labwc_title_bg="#1f2329"
+      labwc_title_fg="#e5e7eb"
+      labwc_inactive_title_bg="#111827"
+      labwc_inactive_title_fg="#9ca3af"
+      labwc_border="#30363d"
       ;;
   esac
-  mkdir -p "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0"
-  chmod 0700 "$config_dir" "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0" 2>/dev/null || true
+  mkdir -p "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0" "$config_dir/labwc"
+  chmod 0700 "$config_dir" "$config_dir/crabbox" "$config_dir/gtk-3.0" "$config_dir/gtk-4.0" "$config_dir/labwc" 2>/dev/null || true
   printf '%s\n' "$theme" > "$config_dir/crabbox/desktop-theme"
   for gtk_dir in "$config_dir/gtk-3.0" "$config_dir/gtk-4.0"; do
     cat > "$gtk_dir/settings.ini" <<EOF
@@ -1527,6 +1537,26 @@ EOF
       DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings set "org.gnome.Terminal.Legacy.Profile:$profile_path" background-color "$terminal_bg" >/dev/null 2>&1 || true
       DISPLAY="$display" XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="$dbus_address" GDK_BACKEND=x11 gsettings set "org.gnome.Terminal.Legacy.Profile:$profile_path" use-transparent-background false >/dev/null 2>&1 || true
     done
+  fi
+  cat > "$config_dir/labwc/themerc-override" <<EOF
+window.active.title.bg.color: $labwc_title_bg
+window.active.label.text.color: $labwc_title_fg
+window.inactive.title.bg.color: $labwc_inactive_title_bg
+window.inactive.label.text.color: $labwc_inactive_title_fg
+window.active.border.color: $labwc_border
+window.inactive.border.color: $labwc_border
+window.active.button.unpressed.image.color: $labwc_title_fg
+window.inactive.button.unpressed.image.color: $labwc_inactive_title_fg
+window.active.button.hover.image.color: $labwc_title_fg
+window.inactive.button.hover.image.color: $labwc_inactive_title_fg
+window.active.button.pressed.image.color: $labwc_title_fg
+window.inactive.button.pressed.image.color: $labwc_inactive_title_fg
+EOF
+  if command -v labwc >/dev/null 2>&1; then
+    labwc_pid="$(pgrep -u "$user" -n -x labwc 2>/dev/null || true)"
+    if [ -n "$labwc_pid" ]; then
+      LABWC_PID="$labwc_pid" XDG_RUNTIME_DIR="$runtime" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}" labwc --reconfigure >/dev/null 2>&1 || kill -HUP "$labwc_pid" >/dev/null 2>&1 || true
+    fi
   fi
   if pgrep -u "$user" -x gnome-panel >/dev/null 2>&1; then
     pkill -TERM -u "$user" -x gnome-panel >/dev/null 2>&1 || true
